@@ -46,15 +46,20 @@ function extractText(body: ZApiWebhook): string | null {
 export async function POST(req: Request) {
   // Security: validate Z-API token
   if (!isValidZApiRequest(req)) {
+    console.log('[whatsapp] Unauthorized - token:', req.headers.get('client-token'))
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   let body: ZApiWebhook
   try {
-    body = await req.json()
+    const raw = await req.text()
+    console.log('[whatsapp] payload:', raw)
+    body = JSON.parse(raw)
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
+
+  console.log('[whatsapp] fromMe:', body.fromMe, 'isGroup:', body.isGroup, 'text:', body.text)
 
   // Ignore messages sent by us or group messages
   if (body.fromMe || body.isGroup || body.waitingMessage) {
