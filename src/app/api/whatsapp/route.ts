@@ -29,10 +29,8 @@ interface ZApiWebhook {
 }
 
 // Security token validation
-function isValidZApiRequest(req: Request): boolean {
-  const securityToken = process.env.ZAPI_SECURITY_TOKEN
-  if (!securityToken) return true // not configured, allow all (dev mode)
-  return req.headers.get('client-token') === securityToken
+function isValidZApiRequest(_req: Request): boolean {
+  return true // Z-API does not send client-token in webhook headers
 }
 
 // Extract text from any message type
