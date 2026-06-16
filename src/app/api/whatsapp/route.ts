@@ -1,100 +1,100 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { zapiSendText } from '@/lib/zapi'
+import { evolutionSendText } from '@/lib/evolution'
 import { parseWhatsAppMessage } from '@/lib/whatsapp-parser'
 import { calculateFinancials } from '@/lib/finance'
 import { startOfMonth, endOfMonth } from 'date-fns'
 
-// Z-API webhook payload (receive messages)
-// https://developer.z-api.io/webhooks/on-message-received
-interface ZApiWebhook {
-  instanceId: string
-  messageId: string
-  phone: string        // "5511999999999"
-  fromMe: boolean
-  momment: number      // timestamp ms (typo is from Z-API)
-  status: string
-  chatName: string
-  senderName: string
-  senderPhoto?: string
-  isGroup: boolean
-  type: 'ReceivedCallback'
-  text?: { message: string }
-  image?: { caption?: string }
-  audio?: unknown
-  video?: { caption?: string }
-  document?: unknown
-  sticker?: unknown
-  waitingMessage?: boolean
+// Evolution API webhook payload
+interface EvolutionWebhook {
+  event: string
+  instance: string
+  data: {
+    key: {
+      remoteJid: string
+      fromMe: boolean
+      id: string
+    }
+    pushName?: string
+    message?: {
+      conversation?: string
+      extendedTextMessage?: { text: string }
+      imageMessage?: { caption?: string }
+      videoMessage?: { caption?: string }
+    }
+    messageType: string
+    messageTimestamp: number
+    instanceId: string
+    source: string
+  }
 }
 
-// Security token validation
-function isValidZApiRequest(_req: Request): boolean {
-  return true // Z-API does not send client-token in webhook headers
+function extractPhone(remoteJid: string): string {
+  return remoteJid.replace('@s.whatsapp.net', '').replace('@g.us', '').replace(/\D/g, '')
 }
 
-// Extract text from any message type
-function extractText(body: ZApiWebhook): string | null {
-  if (body.text?.message) return body.text.message
-  if (body.image?.caption) return body.image.caption
-  if (body.video?.caption) return body.video.caption
-  return null
+function extractText(data: EvolutionWebhook['data']): string | null {
+  const msg = data.message
+  if (!msg) return null
+  return (
+    msg.conversation ||
+    msg.extendedTextMessage?.text ||
+    msg.imageMessage?.caption ||
+    msg.videoMessage?.caption ||
+    null
+  )
 }
 
 export async function POST(req: Request) {
-  // Security: validate Z-API token
-  if (!isValidZApiRequest(req)) {
-    console.log('[whatsapp] Unauthorized - token:', req.headers.get('client-token'))
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
-  let body: ZApiWebhook
+  let body: EvolutionWebhook
   try {
     const raw = await req.text()
-    console.log('[whatsapp] payload:', raw)
+    console.log('[whatsapp] payload:', raw.slice(0, 500))
     body = JSON.parse(raw)
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
 
-  console.log('[whatsapp] fromMe:', body.fromMe, 'isGroup:', body.isGroup, 'text:', body.text)
-
-  // Ignore group messages and system messages
-  if (body.isGroup || body.waitingMessage) {
+  // Only process incoming messages
+  if (body.event !== 'messages.upsert') {
     return NextResponse.json({ ok: true })
   }
 
-  const rawPhone = body.phone.replace('@c.us', '').replace(/\D/g, '')
-  const text = extractText(body)
+  const { key, messageType } = body.data
+
+  // Ignore group messages, fromMe, and non-text
+  if (key.fromMe) return NextResponse.json({ ok: true })
+  if (key.remoteJid.includes('@g.us')) return NextResponse.json({ ok: true })
+  if (messageType === 'reactionMessage') return NextResponse.json({ ok: true })
+
+  const phone = extractPhone(key.remoteJid)
+  const text = extractText(body.data)
+
+  console.log('[whatsapp] phone:', phone, 'text:', text)
 
   if (!text) return NextResponse.json({ ok: true })
 
-  // Find user by WhatsApp phone number
-  // Phone is stored as the user's registered email prefix or in a future phone field
-  // For now: look up the user that registered with this phone linked to their account
-  // Strategy: match by a "whatsapp_phone" metadata or fall back to first user (single-tenant)
   const user = await prisma.user.findFirst({ orderBy: { createdAt: 'asc' } })
   if (!user) {
-    await zapiSendText(rawPhone, '❌ Nenhuma conta encontrada. Acesse o app para se cadastrar.')
+    await evolutionSendText(phone, '❌ Nenhuma conta encontrada. Acesse o app para se cadastrar.')
     return NextResponse.json({ ok: true })
   }
 
   const parsed = parseWhatsAppMessage(text)
 
-  // Commands
   if (text.trim().toLowerCase() === 'saldo' || text.trim().toLowerCase() === 'resumo') {
     const reply = await buildSummaryMessage(user.id)
-    await zapiSendText(rawPhone, reply)
+    await evolutionSendText(phone, reply)
     return NextResponse.json({ ok: true })
   }
 
   if (text.trim().toLowerCase() === 'ajuda' || text.trim().toLowerCase() === 'help') {
-    await zapiSendText(rawPhone, HELP_MESSAGE)
+    await evolutionSendText(phone, HELP_MESSAGE)
     return NextResponse.json({ ok: true })
   }
 
   if (parsed.amount <= 0) {
-    await zapiSendText(rawPhone, `❓ Não entendi o valor.\n\n${HELP_MESSAGE}`)
+    await evolutionSendText(phone, `❓ Não entendi o valor.\n\n${HELP_MESSAGE}`)
     return NextResponse.json({ ok: true })
   }
 
@@ -115,7 +115,7 @@ export async function POST(req: Request) {
       ``,
       `_Digite *saldo* para ver seu resumo_`,
     ].join('\n')
-    await zapiSendText(rawPhone, reply)
+    await evolutionSendText(phone, reply)
     return NextResponse.json({ ok: true })
   }
 
@@ -130,7 +130,6 @@ export async function POST(req: Request) {
       },
     })
 
-    // Recalculate to show updated daily budget
     const summary = await fetchSummary(user.id)
     const emoji = summary.thermometerStatus === 'green' ? '🟢' : summary.thermometerStatus === 'yellow' ? '🟡' : '🔴'
     const remaining = summary.dailyBudget - summary.todaySpent
@@ -143,20 +142,17 @@ export async function POST(req: Request) {
       `${emoji} *Hoje:* R$ ${summary.todaySpent.toFixed(2).replace('.', ',')} de R$ ${summary.dailyBudget.toFixed(2).replace('.', ',')}`,
       `📊 *Restante hoje:* R$ ${Math.max(0, remaining).toFixed(2).replace('.', ',')}`,
     ].join('\n')
-    await zapiSendText(rawPhone, reply)
+    await evolutionSendText(phone, reply)
     return NextResponse.json({ ok: true })
   }
 
-  await zapiSendText(rawPhone, `❓ Não entendi. ${HELP_MESSAGE}`)
+  await evolutionSendText(phone, `❓ Não entendi. ${HELP_MESSAGE}`)
   return NextResponse.json({ ok: true })
 }
 
-// GET — Z-API webhook validation (some providers ping GET on setup)
 export async function GET() {
   return NextResponse.json({ status: 'Termômetro Financeiro webhook ativo' })
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
 
 const HELP_MESSAGE = [
   `📱 *Termômetro Financeiro*`,
