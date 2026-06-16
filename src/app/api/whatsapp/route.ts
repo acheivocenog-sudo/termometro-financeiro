@@ -59,8 +59,8 @@ export async function POST(req: Request) {
 
   console.log('[whatsapp] fromMe:', body.fromMe, 'isGroup:', body.isGroup, 'text:', body.text)
 
-  // Ignore messages sent by us or group messages
-  if (body.fromMe || body.isGroup || body.waitingMessage) {
+  // Ignore group messages and system messages
+  if (body.isGroup || body.waitingMessage) {
     return NextResponse.json({ ok: true })
   }
 
