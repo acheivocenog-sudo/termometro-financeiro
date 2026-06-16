@@ -1,0 +1,61 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-green: #22c55e;
+    --color-yellow: #eab308;
+    --color-red: #ef4444;
+    --color-dark-red: #991b1b;
+  }
+
+  body {
+    @apply bg-gray-950 text-gray-100 antialiased;
+  }
+
+  * {
+    @apply border-gray-800;
+  }
+}
+
+@layer utilities {
+  .card {
+    @apply bg-gray-900 rounded-2xl border border-gray-800 p-5;
+  }
+
+  .btn-primary {
+    @apply bg-emerald-500 hover:bg-emerald-400 text-white font-semibold py-2 px-4 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply bg-gray-800 hover:bg-gray-700 text-gray-200 font-semibold py-2 px-4 rounded-xl transition-colors;
+  }
+
+  .btn-danger {
+    @apply bg-red-900/40 hover:bg-red-800/60 text-red-400 font-semibold py-2 px-4 rounded-xl transition-colors;
+  }
+
+  .input {
+    @apply bg-gray-800 border border-gray-700 text-gray-100 rounded-xl px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-emerald-500 placeholder:text-gray-500;
+  }
+
+  .label {
+    @apply text-sm font-medium text-gray-400 mb-1 block;
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #374151 transparent;
+  }
+}
+
+/* Thermometer animation */
+@keyframes thermometer-fill {
+  from { height: 0%; }
+  to { height: var(--fill-height); }
+}
+
+.thermometer-fill {
+  animation: thermometer-fill 1s ease-out forwards;
+}

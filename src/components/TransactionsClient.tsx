@@ -1,0 +1,240 @@
+'use client'
+
+import { useEffect, useState } from 'react'
+import { format } from 'date-fns'
+import { ptBR } from 'date-fns/locale'
+import { Trash2, TrendingUp, TrendingDown, RefreshCw, Filter } from 'lucide-react'
+import { formatCurrency } from '@/lib/finance'
+
+type TabType = 'variable' | 'incomes' | 'fixed'
+
+const CATEGORY_COLORS: Record<string, string> = {
+  'Alimentação': 'bg-orange-500/20 text-orange-400',
+  'Transporte': 'bg-blue-500/20 text-blue-400',
+  'Saúde': 'bg-red-500/20 text-red-400',
+  'Lazer': 'bg-purple-500/20 text-purple-400',
+  'Educação': 'bg-cyan-500/20 text-cyan-400',
+  'Moradia': 'bg-yellow-500/20 text-yellow-400',
+  'Vestuário': 'bg-pink-500/20 text-pink-400',
+  'Tecnologia': 'bg-indigo-500/20 text-indigo-400',
+  'Serviços': 'bg-teal-500/20 text-teal-400',
+  'Outros': 'bg-gray-500/20 text-gray-400',
+}
+
+export default function TransactionsClient() {
+  const [data, setData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [tab, setTab] = useState<TabType>('variable')
+
+  const fetchData = () => {
+    setLoading(true)
+    fetch('/api/dashboard')
+      .then(r => r.json())
+      .then(d => { setData(d); setLoading(false) })
+  }
+
+  useEffect(() => { fetchData() }, [])
+
+  async function deleteExpense(id: string) {
+    await fetch(`/api/variable-expenses/${id}`, { method: 'DELETE' })
+    fetchData()
+  }
+
+  async function deleteIncome(id: string) {
+    await fetch(`/api/incomes/${id}`, { method: 'DELETE' })
+    fetchData()
+  }
+
+  async function deleteFixed(id: string) {
+    await fetch(`/api/fixed-expenses/${id}`, { method: 'DELETE' })
+    fetchData()
+  }
+
+  const tabs: Array<{ key: TabType; label: string; icon: typeof TrendingUp }> = [
+    { key: 'variable', label: 'Gastos', icon: TrendingDown },
+    { key: 'incomes', label: 'Receitas', icon: TrendingUp },
+    { key: 'fixed', label: 'Fixas', icon: Filter },
+  ]
+
+  // Category breakdown for variable expenses
+  const categorySummary = data?.variableExpenses.reduce((acc: Record<string, number>, e: any) => {
+    acc[e.category] = (acc[e.category] || 0) + e.amount
+    return acc
+  }, {}) ?? {}
+
+  const sortedCategories = Object.entries(categorySummary)
+    .sort(([, a], [, b]) => (b as number) - (a as number))
+
+  const totalVariable = data?.variableExpenses.reduce((s: number, e: any) => s + e.amount, 0) ?? 0
+  const totalIncome = data?.incomes.reduce((s: number, i: any) => s + i.amount, 0) ?? 0
+
+  return (
+    <div className="p-4 md:p-6 pb-24 md:pb-6 max-w-4xl mx-auto">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Transações</h1>
+          <p className="text-sm text-gray-400">Histórico do mês atual</p>
+        </div>
+        <button onClick={fetchData} className="btn-secondary p-1.5 rounded-xl">
+          <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+        </button>
+      </div>
+
+      {/* Category breakdown (only for variable) */}
+      {tab === 'variable' && sortedCategories.length > 0 && (
+        <div className="card mb-4">
+          <h3 className="text-sm font-semibold text-gray-400 mb-3">Por Categoria</h3>
+          <div className="space-y-2">
+            {sortedCategories.map(([cat, amount]) => {
+              const pct = totalVariable > 0 ? ((amount as number) / totalVariable) * 100 : 0
+              return (
+                <div key={cat}>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="text-gray-300">{cat}</span>
+                    <span className="text-gray-400">{formatCurrency(amount as number)} ({Math.round(pct)}%)</span>
+                  </div>
+                  <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-red-500 rounded-full transition-all"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+          <div className="flex justify-between mt-3 pt-3 border-t border-gray-800">
+            <span className="text-sm text-gray-400">Total</span>
+            <span className="text-sm font-bold text-red-400">{formatCurrency(totalVariable)}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Tabs */}
+      <div className="flex gap-1 bg-gray-900 p-1 rounded-xl mb-4 border border-gray-800">
+        {tabs.map(t => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium transition-colors ${
+              tab === t.key
+                ? 'bg-gray-800 text-white'
+                : 'text-gray-500 hover:text-gray-300'
+            }`}
+          >
+            <t.icon className="w-3.5 h-3.5" />
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Content */}
+      <div className="card">
+        {tab === 'variable' && (
+          <>
+            {data?.variableExpenses.length === 0 ? (
+              <p className="text-center text-gray-600 py-8">Nenhum gasto registrado.</p>
+            ) : (
+              <div className="divide-y divide-gray-800">
+                {data?.variableExpenses.map((exp: any) => (
+                  <div key={exp.id} className="flex items-center gap-3 py-3 group">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-white truncate">{exp.description}</p>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className={`text-xs px-1.5 py-0.5 rounded-md ${CATEGORY_COLORS[exp.category] ?? CATEGORY_COLORS['Outros']}`}>
+                          {exp.category}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          {format(new Date(exp.date), "d 'de' MMM", { locale: ptBR })}
+                        </span>
+                      </div>
+                    </div>
+                    <span className="text-sm font-bold text-red-400">{formatCurrency(exp.amount)}</span>
+                    <button
+                      onClick={() => deleteExpense(exp.id)}
+                      className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 transition-all"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {tab === 'incomes' && (
+          <>
+            {data?.incomes.length === 0 ? (
+              <p className="text-center text-gray-600 py-8">Nenhuma receita cadastrada.</p>
+            ) : (
+              <div className="divide-y divide-gray-800">
+                {data?.incomes.map((inc: any) => (
+                  <div key={inc.id} className="flex items-center gap-3 py-3 group">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-white truncate">{inc.description}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        {format(new Date(inc.date), "d 'de' MMMM", { locale: ptBR })}
+                        {inc.recurring && <span className="ml-2 text-emerald-600">Recorrente</span>}
+                      </p>
+                    </div>
+                    <span className="text-sm font-bold text-emerald-400">{formatCurrency(inc.amount)}</span>
+                    <button
+                      onClick={() => deleteIncome(inc.id)}
+                      className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 transition-all"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+                <div className="flex justify-between pt-3 text-sm font-semibold">
+                  <span className="text-gray-400">Total</span>
+                  <span className="text-emerald-400">{formatCurrency(totalIncome)}</span>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {tab === 'fixed' && (
+          <>
+            {data?.fixedExpenses.length === 0 ? (
+              <p className="text-center text-gray-600 py-8">Nenhuma despesa fixa cadastrada.</p>
+            ) : (
+              <div className="divide-y divide-gray-800">
+                {data?.fixedExpenses.map((exp: any) => (
+                  <div key={exp.id} className="flex items-center gap-3 py-3 group">
+                    <div className="flex-1 min-w-0">
+                      <p className={`text-sm font-medium truncate ${exp.paid ? 'line-through text-gray-600' : 'text-white'}`}>
+                        {exp.description}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Vence dia {exp.dueDay}
+                        {exp.paid && <span className="ml-2 text-emerald-500">Pago</span>}
+                      </p>
+                    </div>
+                    <span className={`text-sm font-bold ${exp.paid ? 'text-gray-600' : 'text-red-400'}`}>
+                      {formatCurrency(exp.amount)}
+                    </span>
+                    <button
+                      onClick={() => deleteFixed(exp.id)}
+                      className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 transition-all"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+                <div className="flex justify-between pt-3 text-sm font-semibold">
+                  <span className="text-gray-400">Total</span>
+                  <span className="text-red-400">
+                    {formatCurrency(data?.fixedExpenses.reduce((s: number, e: any) => s + e.amount, 0) ?? 0)}
+                  </span>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
