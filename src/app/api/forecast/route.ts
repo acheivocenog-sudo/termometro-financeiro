@@ -25,22 +25,8 @@ export async function GET() {
   const currentBalance = Number(balance?.amount ?? 0)
   const days = []
 
+  // currentBalance already reflects all past transactions — start forecast from here
   let runningBalance = currentBalance
-
-  // Calculate running balance up to yesterday
-  for (let d = 1; d < today.getDate(); d++) {
-    const date = new Date(today.getFullYear(), today.getMonth(), d)
-    const dayIncomes = incomes.filter(i => isSameDay(new Date(i.date), date))
-    const dayFixed = fixedExpenses.filter(e => e.dueDay === d)
-    const dayInstallments = installments.filter(i => i.dueDay === d)
-    const dayVariable = variableExpenses.filter(e => isSameDay(new Date(e.date), date))
-
-    const totalIn = dayIncomes.reduce((s, i) => s + Number(i.amount), 0)
-    const totalOut = [...dayFixed, ...dayInstallments].reduce((s, e) => s + Number(e.amount), 0)
-      + dayVariable.reduce((s, e) => s + Number(e.amount), 0)
-
-    runningBalance = runningBalance + totalIn - totalOut
-  }
 
   // Build forecast from today to end of month
   for (let d = today.getDate(); d <= totalDays; d++) {
