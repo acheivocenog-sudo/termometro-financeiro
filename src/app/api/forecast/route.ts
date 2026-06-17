@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/api-auth'
 import { startOfMonth, endOfMonth, isSameDay, isBefore } from 'date-fns'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET() {
   const { userId, response } = await requireAuth()
   if (!userId) return response!
