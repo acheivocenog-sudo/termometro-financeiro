@@ -289,14 +289,12 @@ export default function DashboardClient() {
         onClose={() => setModal(null)}
         onSaved={fetchData}
       />
-      {summary && (
-        <BalanceModal
-          open={modal === 'balance'}
-          currentBalance={summary.currentBalance}
-          onClose={() => setModal(null)}
-          onSaved={fetchData}
-        />
-      )}
+      <BalanceModal
+        open={modal === 'balance'}
+        currentBalance={summary?.currentBalance ?? 0}
+        onClose={() => setModal(null)}
+        onSaved={fetchData}
+      />
     </div>
   )
 }
