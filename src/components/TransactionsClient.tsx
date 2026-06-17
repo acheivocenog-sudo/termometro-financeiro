@@ -3,10 +3,11 @@
 import { useEffect, useState } from 'react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { Trash2, TrendingUp, TrendingDown, RefreshCw, Filter } from 'lucide-react'
+import { Trash2, TrendingUp, TrendingDown, RefreshCw, Filter, CreditCard, Plus } from 'lucide-react'
 import { formatCurrency } from '@/lib/finance'
+import AddInstallmentModal from './AddInstallmentModal'
 
-type TabType = 'variable' | 'incomes' | 'fixed'
+type TabType = 'variable' | 'incomes' | 'fixed' | 'installments'
 
 const CATEGORY_COLORS: Record<string, string> = {
   'Alimentação': 'bg-orange-500/20 text-orange-400',
@@ -23,14 +24,21 @@ const CATEGORY_COLORS: Record<string, string> = {
 
 export default function TransactionsClient() {
   const [data, setData] = useState<any>(null)
+  const [installments, setInstallments] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<TabType>('variable')
+  const [showInstallmentModal, setShowInstallmentModal] = useState(false)
 
   const fetchData = () => {
     setLoading(true)
-    fetch('/api/dashboard')
-      .then(r => r.json())
-      .then(d => { setData(d); setLoading(false) })
+    Promise.all([
+      fetch('/api/dashboard').then(r => r.json()),
+      fetch('/api/installments').then(r => r.json()),
+    ]).then(([d, inst]) => {
+      setData(d)
+      setInstallments(inst)
+      setLoading(false)
+    })
   }
 
   useEffect(() => { fetchData() }, [])
@@ -50,10 +58,16 @@ export default function TransactionsClient() {
     fetchData()
   }
 
+  async function deleteInstallment(id: string) {
+    await fetch(`/api/installments/${id}`, { method: 'DELETE' })
+    fetchData()
+  }
+
   const tabs: Array<{ key: TabType; label: string; icon: typeof TrendingUp }> = [
     { key: 'variable', label: 'Gastos', icon: TrendingDown },
     { key: 'incomes', label: 'Receitas', icon: TrendingUp },
     { key: 'fixed', label: 'Fixas', icon: Filter },
+    { key: 'installments', label: 'Parcelas', icon: CreditCard },
   ]
 
   // Category breakdown for variable expenses
@@ -234,7 +248,60 @@ export default function TransactionsClient() {
             )}
           </>
         )}
+
+        {tab === 'installments' && (
+          <>
+            <div className="flex justify-end mb-3">
+              <button
+                onClick={() => setShowInstallmentModal(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                Adicionar
+              </button>
+            </div>
+            {installments.length === 0 ? (
+              <p className="text-center text-gray-600 py-8">Nenhuma parcela cadastrada.</p>
+            ) : (
+              <div className="divide-y divide-gray-800">
+                {installments.map((inst: any) => (
+                  <div key={inst.id} className="flex items-center gap-3 py-3 group">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-white truncate">{inst.description}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">
+                        Vence dia {inst.dueDay} · {inst.remainingInstallments}/{inst.totalInstallments} parcelas restantes
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-sm font-bold text-purple-400">{formatCurrency(Number(inst.amount))}</span>
+                      <p className="text-xs text-gray-500">por parcela</p>
+                    </div>
+                    <button
+                      onClick={() => deleteInstallment(inst.id)}
+                      className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 transition-all"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+                <div className="flex justify-between pt-3 text-sm font-semibold">
+                  <span className="text-gray-400">Total mensal</span>
+                  <span className="text-purple-400">
+                    {formatCurrency(installments.reduce((s: number, i: any) => s + Number(i.amount), 0))}
+                  </span>
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
+
+      {showInstallmentModal && (
+        <AddInstallmentModal
+          onClose={() => setShowInstallmentModal(false)}
+          onSuccess={fetchData}
+        />
+      )}
     </div>
   )
 }
