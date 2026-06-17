@@ -18,6 +18,7 @@ model User {
   incomes          Income[]
   fixedExpenses    FixedExpense[]
   variableExpenses VariableExpense[]
+  installments     Installment[]
   balance          Balance?
 }
 
@@ -59,6 +60,23 @@ model FixedExpense {
   paidAt      DateTime?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// Empréstimos e parcelas
+model Installment {
+  id                  String   @id @default(cuid())
+  userId              String
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  description         String
+  amount              Decimal  @db.Decimal(12, 2) // valor de cada parcela
+  totalInstallments   Int      // total de parcelas
+  remainingInstallments Int    // parcelas restantes
+  dueDay              Int      // dia do mês que vence
+  startDate           DateTime // data da primeira parcela
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   @@index([userId])
 }

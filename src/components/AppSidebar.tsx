@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { signOut } from 'next-auth/react'
 import {
   TrendingUp, LayoutDashboard, Calendar, List, Settings,
-  LogOut, ChevronRight, Thermometer
+  LogOut, ChevronRight, Thermometer, BarChart2
 } from 'lucide-react'
 
 interface AppSidebarProps {
@@ -15,6 +15,7 @@ interface AppSidebarProps {
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/dashboard/forecast', label: 'Previsão', icon: BarChart2 },
   { href: '/dashboard/calendar', label: 'Calendário', icon: Calendar },
   { href: '/dashboard/transactions', label: 'Transações', icon: List },
   { href: '/dashboard/settings', label: 'Configurações', icon: Settings },

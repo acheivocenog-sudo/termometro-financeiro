@@ -27,7 +27,12 @@
       "Bash(curl -s \"https://api.z-api.io/instances/3F4BDB4A064FE1EEE0A88A4C8D5ED547/token/D6163906B7A012CD89FFBEF5/status\" -H \"client-token: Fea4ac7d92b724fed87d112cd2c7bf32fS\")",
       "Bash(git init *)",
       "Bash(git add *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(git remote *)",
+      "Bash(git branch *)",
+      "Bash(git push *)",
+      "Bash(git config *)",
+      "Bash(curl -s \"https://api.vercel.com/v1/deployments\" -H \"Authorization: Bearer \")"
     ]
   }
 }
