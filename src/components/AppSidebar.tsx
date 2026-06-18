@@ -91,6 +91,13 @@ export default function AppSidebar({ userName, userEmail }: AppSidebarProps) {
             </Link>
           )
         })}
+        <button
+          onClick={() => signOut({ callbackUrl: '/login' })}
+          className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-lg transition-colors text-gray-500 hover:text-red-400"
+        >
+          <LogOut className="w-5 h-5" />
+          <span className="text-[10px] font-medium">Sair</span>
+        </button>
       </nav>
     </>
   )
