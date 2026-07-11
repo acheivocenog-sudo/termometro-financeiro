@@ -22,7 +22,7 @@ interface ForecastDay {
   entries: ForecastEntry[]
   totalIn: number
   totalOut: number
-  balance: number
+  balance: number | null
 }
 
 interface ForecastData {
@@ -155,7 +155,7 @@ export default function ForecastClient() {
                 return (
                   <div key={day.day} className={`border-l-2 ${day.isToday ? 'border-blue-500' : 'border-transparent'}`}>
                     <div
-                      className={`grid grid-cols-5 px-4 py-3 text-sm cursor-pointer hover:bg-zinc-800/30 transition-colors ${getBalanceBg(day.balance, day.isToday)}`}
+                      className={`grid grid-cols-5 px-4 py-3 text-sm ${day.isPast ? 'opacity-40' : 'cursor-pointer hover:bg-zinc-800/30'} transition-colors ${day.balance !== null ? getBalanceBg(day.balance, day.isToday) : ''}`}
                       onClick={() => hasEntries && setExpandedDay(isExpanded ? null : day.day)}
                     >
                       <div className="flex items-center gap-2">
@@ -194,8 +194,8 @@ export default function ForecastClient() {
                         )}
                       </div>
 
-                      <div className={`text-right font-semibold ${getBalanceColor(day.balance)}`}>
-                        {formatCurrency(day.balance)}
+                      <div className={`text-right font-semibold ${day.balance !== null ? getBalanceColor(day.balance) : 'text-zinc-600'}`}>
+                        {day.balance !== null ? formatCurrency(day.balance) : '—'}
                       </div>
                     </div>
 

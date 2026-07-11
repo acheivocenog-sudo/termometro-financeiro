@@ -109,13 +109,19 @@ export async function GET(req: Request) {
   const allTargetVariables = isCurrentMonth ? currentVariableExpenses : targetVariableExpenses
 
   const totalDays = getDaysInMonth(new Date(targetYear, targetMonth))
-  let runningBalance = isCurrentMonth ? monthStartBalance : startingBalance
+  let runningBalance = isCurrentMonth ? currentBalance : startingBalance
   const days = []
 
   for (let d = 1; d <= totalDays; d++) {
     const date = new Date(targetYear, targetMonth, d)
     const isToday = isCurrentMonth && d === today.getDate()
     const isPast = isCurrentMonth && d < today.getDate()
+
+    // Past days show empty — saldo atual é o ponto de partida a partir de hoje
+    if (isPast) {
+      days.push({ day: d, date: date.toISOString(), isToday: false, isPast: true, entries: [], totalIn: 0, totalOut: 0, balance: null })
+      continue
+    }
 
     const dayIncomes = allTargetIncomes
       .filter(i => i.recurring ? new Date(i.date).getDate() === d : isSameDay(new Date(i.date), date))
@@ -143,26 +149,13 @@ export async function GET(req: Request) {
       .filter(e => isSameDay(new Date(e.date), date))
       .map(e => ({ description: e.description, amount: Number(e.amount), type: 'variable' as const, category: e.category }))
 
-    // Past days: only show actual recorded transactions (variable + incomes), not projected fixed/installments
-    const entries = isPast
-      ? [...dayIncomes, ...dayVariable]
-      : [...dayIncomes, ...dayFixed, ...dayInstallments, ...dayVariable]
-
-    const totalIn = entries.filter(e => e.type === 'income').reduce((s, e) => s + e.amount, 0)
-    const totalOut = entries.filter(e => e.type !== 'income').reduce((s, e) => s + e.amount, 0)
+    const entries = [...dayIncomes, ...dayFixed, ...dayInstallments, ...dayVariable]
+    const totalIn = dayIncomes.reduce((s, e) => s + e.amount, 0)
+    const totalOut = [...dayFixed, ...dayInstallments, ...dayVariable].reduce((s, e) => s + e.amount, 0)
 
     runningBalance = runningBalance + totalIn - totalOut
 
-    days.push({
-      day: d,
-      date: date.toISOString(),
-      isToday,
-      isPast,
-      entries,
-      totalIn,
-      totalOut,
-      balance: runningBalance,
-    })
+    days.push({ day: d, date: date.toISOString(), isToday, isPast: false, entries, totalIn, totalOut, balance: runningBalance })
   }
 
   return NextResponse.json({ days, currentBalance: isCurrentMonth ? monthStartBalance : startingBalance, isFuture, isCurrentMonth })
