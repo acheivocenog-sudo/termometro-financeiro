@@ -19,10 +19,8 @@ export async function GET(req: Request) {
   const isFuture = targetYear > today.getFullYear() ||
     (targetYear === today.getFullYear() && targetMonth > today.getMonth())
 
-  // Months elapsed from current month to target
   const monthsElapsedToTarget = (targetYear - today.getFullYear()) * 12 + (targetMonth - today.getMonth())
 
-  // Fetch only what's needed
   const targetStart = startOfMonth(new Date(targetYear, targetMonth))
   const targetEnd = endOfMonth(new Date(targetYear, targetMonth))
   const currentStart = startOfMonth(today)
@@ -30,25 +28,53 @@ export async function GET(req: Request) {
 
   const [balance, recurringIncomes, currentMonthIncomes, targetMonthIncomes, fixedExpenses, installments, currentVariableExpenses, targetVariableExpenses] = await Promise.all([
     prisma.balance.findUnique({ where: { userId } }),
-    // Recurring incomes (needed for projections)
     prisma.income.findMany({ where: { userId, recurring: true } }),
-    // Non-recurring incomes in current month (for current month remainder projection)
     prisma.income.findMany({ where: { userId, recurring: false, date: { gte: currentStart, lte: currentEnd } } }),
-    // Non-recurring incomes in target month
     isCurrentMonth ? Promise.resolve([]) : prisma.income.findMany({ where: { userId, recurring: false, date: { gte: targetStart, lte: targetEnd } } }),
     prisma.fixedExpense.findMany({ where: { userId } }),
     prisma.installment.findMany({ where: { userId, remainingInstallments: { gt: 0 } } }),
-    // Variable expenses for current month only
     prisma.variableExpense.findMany({ where: { userId, date: { gte: currentStart, lte: currentEnd } } }),
-    // Variable expenses for target month (if different)
     isCurrentMonth ? Promise.resolve([]) : prisma.variableExpense.findMany({ where: { userId, date: { gte: targetStart, lte: targetEnd } } }),
   ])
 
   const currentBalance = Number(balance?.amount ?? 0)
-  let startingBalance = currentBalance
 
+  // --- CURRENT MONTH: reconstruct month-start balance ---
+  // currentBalance already reflects all past transactions.
+  // To find what the balance was on day 1, undo actual recorded transactions up to today.
+  let monthStartBalance = currentBalance
+  if (isCurrentMonth) {
+    // Undo incomes recorded so far this month
+    for (const inc of currentMonthIncomes) {
+      monthStartBalance -= Number(inc.amount)
+    }
+    for (const inc of recurringIncomes) {
+      const incDay = new Date(inc.date).getDate()
+      if (incDay <= today.getDate()) {
+        monthStartBalance -= Number(inc.amount)
+      }
+    }
+    // Undo variable expenses recorded so far this month
+    for (const exp of currentVariableExpenses) {
+      monthStartBalance += Number(exp.amount)
+    }
+    // Undo fixed expenses and installments due before or on today
+    for (const exp of fixedExpenses) {
+      if (exp.dueDay <= today.getDate()) {
+        monthStartBalance += Number(exp.amount)
+      }
+    }
+    for (const inst of installments) {
+      if (inst.dueDay <= today.getDate()) {
+        monthStartBalance += Number(inst.amount)
+      }
+    }
+  }
+
+  // --- FUTURE MONTH: project forward from current balance ---
+  let startingBalance = currentBalance
   if (isFuture) {
-    // Project balance from today to end of current month
+    // Finish current month from today onward
     const daysInCurrentMonth = getDaysInMonth(today)
     for (let d = today.getDate(); d <= daysInCurrentMonth; d++) {
       const date = new Date(today.getFullYear(), today.getMonth(), d)
@@ -65,32 +91,31 @@ export async function GET(req: Request) {
       startingBalance += dayIn - dayOut
     }
 
-    // Project each intermediate month as a monthly sum (fast)
+    // Intermediate months (monthly sum)
     for (let m = 1; m < monthsElapsedToTarget; m++) {
       const monthlyIn = recurringIncomes.reduce((s, i) => s + Number(i.amount), 0)
       const monthlyOut = fixedExpenses.reduce((s, e) => s + Number(e.amount), 0)
-        + installments
-            .filter(i => i.remainingInstallments > m)
-            .reduce((s, i) => s + Number(i.amount), 0)
+        + installments.filter(i => i.remainingInstallments > m).reduce((s, i) => s + Number(i.amount), 0)
       startingBalance += monthlyIn - monthlyOut
     }
+
+    monthStartBalance = startingBalance
   }
 
-  // Build day-by-day forecast for target month
+  // --- BUILD DAY-BY-DAY TABLE (full month) ---
   const allTargetIncomes = isCurrentMonth
     ? [...recurringIncomes, ...currentMonthIncomes]
     : [...recurringIncomes, ...targetMonthIncomes]
-
   const allTargetVariables = isCurrentMonth ? currentVariableExpenses : targetVariableExpenses
 
   const totalDays = getDaysInMonth(new Date(targetYear, targetMonth))
-  const startDay = isCurrentMonth ? today.getDate() : 1
-  let runningBalance = startingBalance
+  let runningBalance = isCurrentMonth ? monthStartBalance : startingBalance
   const days = []
 
-  for (let d = startDay; d <= totalDays; d++) {
+  for (let d = 1; d <= totalDays; d++) {
     const date = new Date(targetYear, targetMonth, d)
     const isToday = isCurrentMonth && d === today.getDate()
+    const isPast = isCurrentMonth && d < today.getDate()
 
     const dayIncomes = allTargetIncomes
       .filter(i => i.recurring ? new Date(i.date).getDate() === d : isSameDay(new Date(i.date), date))
@@ -118,8 +143,13 @@ export async function GET(req: Request) {
       .filter(e => isSameDay(new Date(e.date), date))
       .map(e => ({ description: e.description, amount: Number(e.amount), type: 'variable' as const, category: e.category }))
 
-    const totalIn = dayIncomes.reduce((s, i) => s + i.amount, 0)
-    const totalOut = [...dayFixed, ...dayInstallments, ...dayVariable].reduce((s, e) => s + e.amount, 0)
+    // Past days: only show actual recorded transactions (variable + incomes), not projected fixed/installments
+    const entries = isPast
+      ? [...dayIncomes, ...dayVariable]
+      : [...dayIncomes, ...dayFixed, ...dayInstallments, ...dayVariable]
+
+    const totalIn = entries.filter(e => e.type === 'income').reduce((s, e) => s + e.amount, 0)
+    const totalOut = entries.filter(e => e.type !== 'income').reduce((s, e) => s + e.amount, 0)
 
     runningBalance = runningBalance + totalIn - totalOut
 
@@ -127,13 +157,13 @@ export async function GET(req: Request) {
       day: d,
       date: date.toISOString(),
       isToday,
-      isPast: false,
-      entries: [...dayIncomes, ...dayFixed, ...dayInstallments, ...dayVariable],
+      isPast,
+      entries,
       totalIn,
       totalOut,
       balance: runningBalance,
     })
   }
 
-  return NextResponse.json({ days, currentBalance: startingBalance, isFuture, isCurrentMonth })
+  return NextResponse.json({ days, currentBalance: isCurrentMonth ? monthStartBalance : startingBalance, isFuture, isCurrentMonth })
 }
