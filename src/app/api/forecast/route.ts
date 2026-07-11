@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/api-auth'
-import { getDaysInMonth, isSameDay } from 'date-fns'
+import { getDaysInMonth, isSameDay, startOfMonth, endOfMonth } from 'date-fns'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,79 +12,76 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const today = new Date()
 
-  const targetMonth = parseInt(searchParams.get('month') ?? String(today.getMonth() + 1)) - 1 // 0-indexed
+  const targetMonth = parseInt(searchParams.get('month') ?? String(today.getMonth() + 1)) - 1
   const targetYear = parseInt(searchParams.get('year') ?? String(today.getFullYear()))
 
   const isCurrentMonth = targetMonth === today.getMonth() && targetYear === today.getFullYear()
-  const isFuture = targetYear > today.getFullYear() || (targetYear === today.getFullYear() && targetMonth > today.getMonth())
+  const isFuture = targetYear > today.getFullYear() ||
+    (targetYear === today.getFullYear() && targetMonth > today.getMonth())
 
-  const [balance, allIncomes, fixedExpenses, installments, variableExpenses] = await Promise.all([
+  // Months elapsed from current month to target
+  const monthsElapsedToTarget = (targetYear - today.getFullYear()) * 12 + (targetMonth - today.getMonth())
+
+  // Fetch only what's needed
+  const targetStart = startOfMonth(new Date(targetYear, targetMonth))
+  const targetEnd = endOfMonth(new Date(targetYear, targetMonth))
+  const currentStart = startOfMonth(today)
+  const currentEnd = endOfMonth(today)
+
+  const [balance, recurringIncomes, currentMonthIncomes, targetMonthIncomes, fixedExpenses, installments, currentVariableExpenses, targetVariableExpenses] = await Promise.all([
     prisma.balance.findUnique({ where: { userId } }),
-    prisma.income.findMany({ where: { userId } }),
+    // Recurring incomes (needed for projections)
+    prisma.income.findMany({ where: { userId, recurring: true } }),
+    // Non-recurring incomes in current month (for current month remainder projection)
+    prisma.income.findMany({ where: { userId, recurring: false, date: { gte: currentStart, lte: currentEnd } } }),
+    // Non-recurring incomes in target month
+    isCurrentMonth ? Promise.resolve([]) : prisma.income.findMany({ where: { userId, recurring: false, date: { gte: targetStart, lte: targetEnd } } }),
     prisma.fixedExpense.findMany({ where: { userId } }),
     prisma.installment.findMany({ where: { userId, remainingInstallments: { gt: 0 } } }),
-    prisma.variableExpense.findMany({ where: { userId } }),
+    // Variable expenses for current month only
+    prisma.variableExpense.findMany({ where: { userId, date: { gte: currentStart, lte: currentEnd } } }),
+    // Variable expenses for target month (if different)
+    isCurrentMonth ? Promise.resolve([]) : prisma.variableExpense.findMany({ where: { userId, date: { gte: targetStart, lte: targetEnd } } }),
   ])
 
   const currentBalance = Number(balance?.amount ?? 0)
-
-  // For future months: calculate projected starting balance by chaining months
   let startingBalance = currentBalance
-  if (isFuture) {
-    let simMonth = today.getMonth()
-    let simYear = today.getFullYear()
 
-    // finish current month first (from today to end of month)
-    const daysInCurrentMonth = getDaysInMonth(new Date(simYear, simMonth))
+  if (isFuture) {
+    // Project balance from today to end of current month
+    const daysInCurrentMonth = getDaysInMonth(today)
     for (let d = today.getDate(); d <= daysInCurrentMonth; d++) {
-      const date = new Date(simYear, simMonth, d)
-      const monthIncomes = allIncomes.filter(i => isSameDay(new Date(i.date), date))
-      const dayFixed = fixedExpenses.filter(e => e.dueDay === d)
-      // months elapsed from now = 0 for current month
-      const dayInst = installments.filter(i => i.dueDay === d && i.remainingInstallments > 0)
-      const dayVar = variableExpenses.filter(e => isSameDay(new Date(e.date), date))
-      const totalIn = monthIncomes.reduce((s, i) => s + Number(i.amount), 0)
-      const totalOut = [...dayFixed, ...dayInst].reduce((s, e) => s + Number(e.amount), 0)
-        + dayVar.reduce((s, e) => s + Number(e.amount), 0)
-      startingBalance += totalIn - totalOut
+      const date = new Date(today.getFullYear(), today.getMonth(), d)
+      const dayIn = [
+        ...recurringIncomes.filter(i => new Date(i.date).getDate() === d),
+        ...currentMonthIncomes.filter(i => isSameDay(new Date(i.date), date)),
+      ].reduce((s, i) => s + Number(i.amount), 0)
+      const dayOut = [
+        ...fixedExpenses.filter(e => e.dueDay === d),
+        ...installments.filter(i => i.dueDay === d && i.remainingInstallments > 0),
+      ].reduce((s, e) => s + Number(e.amount), 0)
+        + currentVariableExpenses.filter(e => isSameDay(new Date(e.date), date))
+          .reduce((s, e) => s + Number(e.amount), 0)
+      startingBalance += dayIn - dayOut
     }
 
-    // advance month by month until target
-    simMonth++
-    if (simMonth > 11) { simMonth = 0; simYear++ }
-
-    let monthsElapsed = 1
-    while (simMonth !== targetMonth || simYear !== targetYear) {
-      const daysInMonth = getDaysInMonth(new Date(simYear, simMonth))
-      for (let d = 1; d <= daysInMonth; d++) {
-        const dayFixed = fixedExpenses.filter(e => e.dueDay === d)
-        const dayInst = installments.filter(i => i.dueDay === d && i.remainingInstallments > monthsElapsed)
-        const recurringIncomes = allIncomes.filter(i => i.recurring && new Date(i.date).getDate() === d)
-        const totalIn = recurringIncomes.reduce((s, i) => s + Number(i.amount), 0)
-        const totalOut = [...dayFixed, ...dayInst].reduce((s, e) => s + Number(e.amount), 0)
-        startingBalance += totalIn - totalOut
-      }
-      simMonth++
-      if (simMonth > 11) { simMonth = 0; simYear++ }
-      monthsElapsed++
+    // Project each intermediate month as a monthly sum (fast)
+    for (let m = 1; m < monthsElapsedToTarget; m++) {
+      const monthlyIn = recurringIncomes.reduce((s, i) => s + Number(i.amount), 0)
+      const monthlyOut = fixedExpenses.reduce((s, e) => s + Number(e.amount), 0)
+        + installments
+            .filter(i => i.remainingInstallments > m)
+            .reduce((s, i) => s + Number(i.amount), 0)
+      startingBalance += monthlyIn - monthlyOut
     }
   }
 
-  // months elapsed from current month to target (for installment remaining check)
-  const monthsElapsedToTarget = (targetYear - today.getFullYear()) * 12 + (targetMonth - today.getMonth())
+  // Build day-by-day forecast for target month
+  const allTargetIncomes = isCurrentMonth
+    ? [...recurringIncomes, ...currentMonthIncomes]
+    : [...recurringIncomes, ...targetMonthIncomes]
 
-  // Get incomes for the target month
-  const targetMonthStart = new Date(targetYear, targetMonth, 1)
-  const targetMonthEnd = new Date(targetYear, targetMonth + 1, 0)
-  const monthIncomes = allIncomes.filter(i => {
-    const d = new Date(i.date)
-    if (i.recurring) return true // recurring incomes appear every month
-    return d >= targetMonthStart && d <= targetMonthEnd
-  })
-  const monthVariableExpenses = isFuture ? [] : variableExpenses.filter(e => {
-    const d = new Date(e.date)
-    return d >= targetMonthStart && d <= targetMonthEnd
-  })
+  const allTargetVariables = isCurrentMonth ? currentVariableExpenses : targetVariableExpenses
 
   const totalDays = getDaysInMonth(new Date(targetYear, targetMonth))
   const startDay = isCurrentMonth ? today.getDate() : 1
@@ -95,16 +92,18 @@ export async function GET(req: Request) {
     const date = new Date(targetYear, targetMonth, d)
     const isToday = isCurrentMonth && d === today.getDate()
 
-    const dayIncomes = monthIncomes
-      .filter(i => {
-        if (i.recurring) return new Date(i.date).getDate() === d
-        return isSameDay(new Date(i.date), date)
-      })
+    const dayIncomes = allTargetIncomes
+      .filter(i => i.recurring ? new Date(i.date).getDate() === d : isSameDay(new Date(i.date), date))
       .map(i => ({ description: i.description, amount: Number(i.amount), type: 'income' as const }))
 
     const dayFixed = fixedExpenses
       .filter(e => e.dueDay === d)
-      .map(e => ({ description: e.description, amount: Number(e.amount), type: 'fixed' as const, paid: isCurrentMonth ? e.paid : false }))
+      .map(e => ({
+        description: e.description,
+        amount: Number(e.amount),
+        type: 'fixed' as const,
+        paid: isCurrentMonth ? e.paid : false,
+      }))
 
     const dayInstallments = installments
       .filter(i => i.dueDay === d && i.remainingInstallments > monthsElapsedToTarget)
@@ -115,13 +114,12 @@ export async function GET(req: Request) {
         remainingInstallments: i.remainingInstallments - monthsElapsedToTarget,
       }))
 
-    const dayVariable = monthVariableExpenses
+    const dayVariable = allTargetVariables
       .filter(e => isSameDay(new Date(e.date), date))
       .map(e => ({ description: e.description, amount: Number(e.amount), type: 'variable' as const, category: e.category }))
 
     const totalIn = dayIncomes.reduce((s, i) => s + i.amount, 0)
-    const totalOut = [...dayFixed, ...dayInstallments].reduce((s, e) => s + e.amount, 0)
-      + dayVariable.reduce((s, e) => s + e.amount, 0)
+    const totalOut = [...dayFixed, ...dayInstallments, ...dayVariable].reduce((s, e) => s + e.amount, 0)
 
     runningBalance = runningBalance + totalIn - totalOut
 
