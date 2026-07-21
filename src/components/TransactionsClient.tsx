@@ -84,6 +84,10 @@ export default function TransactionsClient() {
   const totalVariable = data?.variableExpenses.reduce((s: number, e: any) => s + e.amount, 0) ?? 0
   const totalIncome = data?.incomes.reduce((s: number, i: any) => s + i.amount, 0) ?? 0
 
+  const filteredExpenses: any[] = categoryFilter === 'Todas'
+    ? data?.variableExpenses ?? []
+    : (data?.variableExpenses ?? []).filter((e: any) => e.category === categoryFilter)
+
   return (
     <div className="p-4 md:p-6 pb-24 md:pb-6 max-w-4xl mx-auto">
       <div className="flex items-center justify-between mb-6">
@@ -166,15 +170,11 @@ export default function TransactionsClient() {
                 ))}
               </div>
             )}
-            {(() => {
-              const filtered = categoryFilter === 'Todas'
-                ? data?.variableExpenses ?? []
-                : (data?.variableExpenses ?? []).filter((e: any) => e.category === categoryFilter)
-              return filtered.length === 0 ? (
+            {filteredExpenses.length === 0 ? (
               <p className="text-center text-gray-600 py-8">Nenhum gasto registrado.</p>
             ) : (
               <div className="divide-y divide-gray-800">
-                {filtered.map((exp: any) => (
+                {filteredExpenses.map((exp: any) => (
                   <div key={exp.id} className="flex items-center gap-3 py-3 group">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-white truncate">{exp.description}</p>
@@ -197,8 +197,7 @@ export default function TransactionsClient() {
                   </div>
                 ))}
               </div>
-            )
-            })()}
+            )}
           </>
         )}
 
