@@ -150,16 +150,23 @@ export function buildCalendarData(
 
   const totalDays = differenceInDays(end, start) + 1
 
+  // Helper: compare dates by local date string in Brazil (UTC-3) to avoid server timezone issues
+  const toLocalDateStr = (d: Date) => {
+    const brazil = new Date(d.getTime() - 3 * 60 * 60 * 1000)
+    return brazil.toISOString().slice(0, 10)
+  }
+
   for (let i = 0; i < totalDays; i++) {
     const date = new Date(start)
     date.setDate(start.getDate() + i)
 
+    const dayStr = format(date, 'yyyy-MM-dd') // YYYY-MM-DD of this calendar cell
     const dayNum = date.getDate()
     const isPast = isBefore(date, today) && !isSameDay(date, today)
     const isToday = isSameDay(date, today)
 
     const incomes = data.futureIncomes
-      .filter(inc => isSameDay(new Date(inc.date), date))
+      .filter(inc => toLocalDateStr(new Date(inc.date)) === dayStr)
       .map(inc => ({ description: inc.description, amount: inc.amount }))
 
     const fixedExpenses = data.futureFixedExpenses
@@ -167,7 +174,7 @@ export function buildCalendarData(
       .map(exp => ({ description: exp.description, amount: exp.amount }))
 
     const variableExpenses = data.allVariableExpenses
-      .filter(exp => isSameDay(new Date(exp.date), date))
+      .filter(exp => toLocalDateStr(new Date(exp.date)) === dayStr)
       .map(exp => ({ description: exp.description, amount: exp.amount, category: exp.category }))
 
     const totalIn = incomes.reduce((s, i) => s + i.amount, 0)
