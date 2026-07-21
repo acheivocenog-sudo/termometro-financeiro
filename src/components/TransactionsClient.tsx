@@ -19,6 +19,7 @@ const CATEGORY_COLORS: Record<string, string> = {
   'Vestuário': 'bg-pink-500/20 text-pink-400',
   'Tecnologia': 'bg-indigo-500/20 text-indigo-400',
   'Serviços': 'bg-teal-500/20 text-teal-400',
+  'Investimento': 'bg-emerald-500/20 text-emerald-400',
   'Outros': 'bg-gray-500/20 text-gray-400',
 }
 
@@ -27,6 +28,7 @@ export default function TransactionsClient() {
   const [installments, setInstallments] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<TabType>('variable')
+  const [categoryFilter, setCategoryFilter] = useState<string>('Todas')
   const [showInstallmentModal, setShowInstallmentModal] = useState(false)
 
   const fetchData = () => {
@@ -146,11 +148,33 @@ export default function TransactionsClient() {
       <div className="card">
         {tab === 'variable' && (
           <>
-            {data?.variableExpenses.length === 0 ? (
+            {/* Filtro de categoria */}
+            {data?.variableExpenses.length > 0 && (
+              <div className="flex gap-2 flex-wrap mb-3">
+                {['Todas', ...Object.keys(CATEGORY_COLORS)].map(cat => (
+                  <button
+                    key={cat}
+                    onClick={() => setCategoryFilter(cat)}
+                    className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                      categoryFilter === cat
+                        ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
+                        : 'border-gray-700 text-gray-500 hover:text-gray-300'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            )}
+            {(() => {
+              const filtered = categoryFilter === 'Todas'
+                ? data?.variableExpenses ?? []
+                : (data?.variableExpenses ?? []).filter((e: any) => e.category === categoryFilter)
+              return filtered.length === 0 ? (
               <p className="text-center text-gray-600 py-8">Nenhum gasto registrado.</p>
             ) : (
               <div className="divide-y divide-gray-800">
-                {data?.variableExpenses.map((exp: any) => (
+                {filtered.map((exp: any) => (
                   <div key={exp.id} className="flex items-center gap-3 py-3 group">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-white truncate">{exp.description}</p>
@@ -173,7 +197,8 @@ export default function TransactionsClient() {
                   </div>
                 ))}
               </div>
-            )}
+            )
+            })()}
           </>
         )}
 

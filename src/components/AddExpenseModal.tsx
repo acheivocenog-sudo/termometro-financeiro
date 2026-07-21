@@ -12,7 +12,7 @@ interface AddExpenseModalProps {
 
 const CATEGORIES = [
   'Alimentação', 'Transporte', 'Saúde', 'Lazer', 'Educação',
-  'Moradia', 'Vestuário', 'Tecnologia', 'Serviços', 'Outros',
+  'Moradia', 'Vestuário', 'Tecnologia', 'Serviços', 'Investimento', 'Outros',
 ]
 
 export default function AddExpenseModal({ open, onClose, onSaved }: AddExpenseModalProps) {
