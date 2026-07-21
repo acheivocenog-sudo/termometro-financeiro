@@ -32,10 +32,15 @@ export default function AddExpenseModal({ open, onClose, onSaved }: AddExpenseMo
     setLoading(true)
     setError('')
 
+    // Combine selected date with current local time to avoid UTC day-shift bug
+    const now = new Date()
+    const [year, month, day] = form.date.split('-').map(Number)
+    const localDate = new Date(year, month - 1, day, now.getHours(), now.getMinutes(), now.getSeconds())
+
     const res = await fetch('/api/variable-expenses', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...form, amount: parseFloat(form.amount) }),
+      body: JSON.stringify({ ...form, amount: parseFloat(form.amount), date: localDate.toISOString() }),
     })
 
     setLoading(false)

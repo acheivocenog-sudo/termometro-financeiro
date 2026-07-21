@@ -159,7 +159,7 @@ export default function TransactionsClient() {
                           {exp.category}
                         </span>
                         <span className="text-xs text-gray-500">
-                          {format(new Date(exp.date), "d 'de' MMM", { locale: ptBR })}
+                          {format(new Date(exp.date), "d 'de' MMM 'às' HH:mm", { locale: ptBR })}
                         </span>
                       </div>
                     </div>
@@ -188,7 +188,7 @@ export default function TransactionsClient() {
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-white truncate">{inc.description}</p>
                       <p className="text-xs text-gray-500 mt-0.5">
-                        {format(new Date(inc.date), "d 'de' MMMM", { locale: ptBR })}
+                        {format(new Date(inc.date), "d 'de' MMMM 'às' HH:mm", { locale: ptBR })}
                         {inc.recurring && <span className="ml-2 text-emerald-600">Recorrente</span>}
                       </p>
                     </div>
