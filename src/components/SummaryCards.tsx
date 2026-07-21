@@ -19,13 +19,13 @@ export default function SummaryCards({ summary }: SummaryCardsProps) {
       subtitle: 'Valor em conta hoje',
     },
     {
-      label: 'Receitas Futuras',
+      label: 'Receitas do Mês',
       value: formatCurrency(summary.futureIncomesTotal),
       icon: TrendingUp,
       color: 'text-emerald-400',
       bg: 'bg-emerald-500/10',
       border: 'border-emerald-500/20',
-      subtitle: 'A receber este mês',
+      subtitle: 'Recebidas e a receber hoje+',
     },
     {
       label: 'Contas a Pagar',

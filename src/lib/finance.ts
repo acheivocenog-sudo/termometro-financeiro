@@ -29,11 +29,12 @@ export function calculateFinancials(data: FinancialData, referenceDate: Date = n
   // Dias restantes (incluindo hoje)
   const daysRemaining = differenceInDays(endOfThisMonth, today) + 1
 
-  // Receitas futuras (a partir de amanhã até fim do mês)
+  // Receitas a receber: hoje e futuros até fim do mês
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0)
   const futureIncomesTotal = data.futureIncomes
     .filter(i => {
       const d = new Date(i.date)
-      return isAfter(d, today) && !isAfter(d, endOfThisMonth)
+      return !isBefore(d, todayStart) && !isAfter(d, endOfThisMonth)
     })
     .reduce((sum, i) => sum + i.amount, 0)
 
