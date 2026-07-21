@@ -124,7 +124,7 @@ export function getThermometerLabel(status: FinancialSummary['thermometerStatus'
 
 // Build calendar data for the current month
 export interface CalendarDay {
-  date: Date
+  date: string
   incomes: Array<{ description: string; amount: number }>
   fixedExpenses: Array<{ description: string; amount: number }>
   variableExpenses: Array<{ description: string; amount: number; category: string }>
