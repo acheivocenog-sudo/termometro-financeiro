@@ -178,7 +178,7 @@ export function buildCalendarData(
     }
 
     days.push({
-      date,
+      date: format(date, 'yyyy-MM-dd'),
       incomes,
       fixedExpenses,
       variableExpenses,

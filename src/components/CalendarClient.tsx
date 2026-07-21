@@ -94,10 +94,11 @@ export default function CalendarClient() {
             <div key={`pad-${i}`} className="border-r border-b border-gray-800/50 h-20 md:h-24" />
           ))}
           {calendar.map(day => {
-            const d = new Date(day.date)
+            // Parse as local noon to avoid UTC midnight timezone shift
+            const d = new Date(day.date + 'T12:00:00')
             const isT = isToday(d)
             const hasTx = day.totalIn > 0 || day.totalOut > 0
-            const isSelected = selected && isSameDay(new Date(selected.date), d)
+            const isSelected = selected && isSameDay(new Date(selected.date + 'T12:00:00'), d)
 
             return (
               <button
@@ -145,7 +146,7 @@ export default function CalendarClient() {
         <div className="card mt-4 animate-in slide-in-from-bottom-2">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold text-white">
-              {format(new Date(selected.date), "EEEE, d 'de' MMMM", { locale: ptBR })}
+              {format(new Date(selected.date + 'T12:00:00'), "EEEE, d 'de' MMMM", { locale: ptBR })}
             </h3>
             <button onClick={() => setSelected(null)} className="text-gray-500 hover:text-gray-300 text-sm">
               Fechar
