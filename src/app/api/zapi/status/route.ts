@@ -1,3 +1,4 @@
+﻿export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { requireAuth } from '@/lib/api-auth'
 import { evolutionCheckStatus, evolutionGetQrCode } from '@/lib/evolution'
@@ -27,3 +28,4 @@ export async function GET() {
     webhookUrl: `${process.env.NEXTAUTH_URL}/api/whatsapp`,
   })
 }
+

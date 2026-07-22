@@ -1,3 +1,4 @@
+﻿export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { evolutionSendText } from '@/lib/evolution'
@@ -76,7 +77,7 @@ export async function POST(req: Request) {
 
   const user = await prisma.user.findFirst({ orderBy: { createdAt: 'asc' } })
   if (!user) {
-    await evolutionSendText(phone, '❌ Nenhuma conta encontrada. Acesse o app para se cadastrar.')
+    await evolutionSendText(phone, 'âŒ Nenhuma conta encontrada. Acesse o app para se cadastrar.')
     return NextResponse.json({ ok: true })
   }
 
@@ -94,7 +95,7 @@ export async function POST(req: Request) {
   }
 
   if (parsed.amount <= 0) {
-    await evolutionSendText(phone, `❓ Não entendi o valor.\n\n${HELP_MESSAGE}`)
+    await evolutionSendText(phone, `â“ NÃ£o entendi o valor.\n\n${HELP_MESSAGE}`)
     return NextResponse.json({ ok: true })
   }
 
@@ -109,9 +110,9 @@ export async function POST(req: Request) {
       },
     })
     const reply = [
-      `✅ *Receita registrada!*`,
-      `💰 ${parsed.description}`,
-      `💵 R$ ${parsed.amount.toFixed(2).replace('.', ',')}`,
+      `âœ… *Receita registrada!*`,
+      `ðŸ’° ${parsed.description}`,
+      `ðŸ’µ R$ ${parsed.amount.toFixed(2).replace('.', ',')}`,
       ``,
       `_Digite *saldo* para ver seu resumo_`,
     ].join('\n')
@@ -131,41 +132,41 @@ export async function POST(req: Request) {
     })
 
     const summary = await fetchSummary(user.id)
-    const emoji = summary.thermometerStatus === 'green' ? '🟢' : summary.thermometerStatus === 'yellow' ? '🟡' : '🔴'
+    const emoji = summary.thermometerStatus === 'green' ? 'ðŸŸ¢' : summary.thermometerStatus === 'yellow' ? 'ðŸŸ¡' : 'ðŸ”´'
     const remaining = summary.dailyBudget - summary.todaySpent
 
     const reply = [
-      `✅ *Gasto registrado!*`,
-      `🛒 ${parsed.description} _(${parsed.category})_`,
-      `💸 R$ ${parsed.amount.toFixed(2).replace('.', ',')}`,
+      `âœ… *Gasto registrado!*`,
+      `ðŸ›’ ${parsed.description} _(${parsed.category})_`,
+      `ðŸ’¸ R$ ${parsed.amount.toFixed(2).replace('.', ',')}`,
       ``,
       `${emoji} *Hoje:* R$ ${summary.todaySpent.toFixed(2).replace('.', ',')} de R$ ${summary.dailyBudget.toFixed(2).replace('.', ',')}`,
-      `📊 *Restante hoje:* R$ ${Math.max(0, remaining).toFixed(2).replace('.', ',')}`,
+      `ðŸ“Š *Restante hoje:* R$ ${Math.max(0, remaining).toFixed(2).replace('.', ',')}`,
     ].join('\n')
     await evolutionSendText(phone, reply)
     return NextResponse.json({ ok: true })
   }
 
-  await evolutionSendText(phone, `❓ Não entendi. ${HELP_MESSAGE}`)
+  await evolutionSendText(phone, `â“ NÃ£o entendi. ${HELP_MESSAGE}`)
   return NextResponse.json({ ok: true })
 }
 
 export async function GET() {
-  return NextResponse.json({ status: 'Termômetro Financeiro webhook ativo' })
+  return NextResponse.json({ status: 'TermÃ´metro Financeiro webhook ativo' })
 }
 
 const HELP_MESSAGE = [
-  `📱 *Termômetro Financeiro*`,
+  `ðŸ“± *TermÃ´metro Financeiro*`,
   ``,
   `Envie uma mensagem assim:`,
-  `• *Gastei 50 no mercado*`,
-  `• *Paguei 30 de gasolina*`,
-  `• *Recebi 500 de freelance*`,
-  `• *Ganhei 1200 salário*`,
+  `â€¢ *Gastei 50 no mercado*`,
+  `â€¢ *Paguei 30 de gasolina*`,
+  `â€¢ *Recebi 500 de freelance*`,
+  `â€¢ *Ganhei 1200 salÃ¡rio*`,
   ``,
   `Comandos:`,
-  `• *saldo* — ver resumo financeiro`,
-  `• *ajuda* — esta mensagem`,
+  `â€¢ *saldo* â€” ver resumo financeiro`,
+  `â€¢ *ajuda* â€” esta mensagem`,
 ].join('\n')
 
 async function fetchSummary(userId: string) {
@@ -187,20 +188,21 @@ async function fetchSummary(userId: string) {
 
 async function buildSummaryMessage(userId: string): Promise<string> {
   const s = await fetchSummary(userId)
-  const emoji = s.thermometerStatus === 'green' ? '🟢' : s.thermometerStatus === 'yellow' ? '🟡' : s.thermometerStatus === 'red' ? '🔴' : '🚨'
-  const label = s.thermometerStatus === 'green' ? 'Dentro do planejado' : s.thermometerStatus === 'yellow' ? 'Próximo do limite' : s.thermometerStatus === 'red' ? 'Acima do limite' : 'Comprometendo pagamentos!'
+  const emoji = s.thermometerStatus === 'green' ? 'ðŸŸ¢' : s.thermometerStatus === 'yellow' ? 'ðŸŸ¡' : s.thermometerStatus === 'red' ? 'ðŸ”´' : 'ðŸš¨'
+  const label = s.thermometerStatus === 'green' ? 'Dentro do planejado' : s.thermometerStatus === 'yellow' ? 'PrÃ³ximo do limite' : s.thermometerStatus === 'red' ? 'Acima do limite' : 'Comprometendo pagamentos!'
 
   return [
     `${emoji} *Resumo Financeiro*`,
     ``,
-    `💰 *Saldo atual:* R$ ${s.currentBalance.toFixed(2).replace('.', ',')}`,
-    `📈 *Receitas futuras:* R$ ${s.futureIncomesTotal.toFixed(2).replace('.', ',')}`,
-    `📉 *Contas a pagar:* R$ ${s.futureExpensesTotal.toFixed(2).replace('.', ',')}`,
+    `ðŸ’° *Saldo atual:* R$ ${s.currentBalance.toFixed(2).replace('.', ',')}`,
+    `ðŸ“ˆ *Receitas futuras:* R$ ${s.futureIncomesTotal.toFixed(2).replace('.', ',')}`,
+    `ðŸ“‰ *Contas a pagar:* R$ ${s.futureExpensesTotal.toFixed(2).replace('.', ',')}`,
     ``,
-    `💵 *Saldo projetado:* R$ ${s.projectedBalance.toFixed(2).replace('.', ',')}`,
-    `📅 *Saldo diário:* R$ ${s.dailyBudget.toFixed(2).replace('.', ',')} _(${s.daysRemaining} dias)_`,
+    `ðŸ’µ *Saldo projetado:* R$ ${s.projectedBalance.toFixed(2).replace('.', ',')}`,
+    `ðŸ“… *Saldo diÃ¡rio:* R$ ${s.dailyBudget.toFixed(2).replace('.', ',')} _(${s.daysRemaining} dias)_`,
     ``,
-    `🌡️ *Termômetro:* ${label}`,
-    `🛒 *Gasto hoje:* R$ ${s.todaySpent.toFixed(2).replace('.', ',')}`,
+    `ðŸŒ¡ï¸ *TermÃ´metro:* ${label}`,
+    `ðŸ›’ *Gasto hoje:* R$ ${s.todaySpent.toFixed(2).replace('.', ',')}`,
   ].join('\n')
 }
+
