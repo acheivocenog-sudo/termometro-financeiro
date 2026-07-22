@@ -1,9 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { format } from 'date-fns'
+import { format, addMonths, subMonths } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { Trash2, TrendingUp, TrendingDown, RefreshCw, Filter, CreditCard, Plus } from 'lucide-react'
+import { Trash2, TrendingUp, TrendingDown, RefreshCw, Filter, CreditCard, Plus, ChevronLeft, ChevronRight } from 'lucide-react'
 import { formatCurrency } from '@/lib/finance'
 import AddInstallmentModal from './AddInstallmentModal'
 
@@ -24,6 +24,8 @@ const CATEGORY_COLORS: Record<string, string> = {
 }
 
 export default function TransactionsClient() {
+  const today = new Date()
+  const [viewDate, setViewDate] = useState(new Date(today.getFullYear(), today.getMonth(), 1))
   const [data, setData] = useState<any>(null)
   const [installments, setInstallments] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -31,10 +33,14 @@ export default function TransactionsClient() {
   const [categoryFilter, setCategoryFilter] = useState<string>('Todas')
   const [showInstallmentModal, setShowInstallmentModal] = useState(false)
 
+  const isCurrentMonth = viewDate.getMonth() === today.getMonth() && viewDate.getFullYear() === today.getFullYear()
+
   const fetchData = () => {
     setLoading(true)
+    const month = viewDate.getMonth() + 1
+    const year = viewDate.getFullYear()
     Promise.all([
-      fetch('/api/dashboard').then(r => r.json()),
+      fetch(`/api/transactions?month=${month}&year=${year}`).then(r => r.json()),
       fetch('/api/installments').then(r => r.json()),
     ]).then(([d, inst]) => {
       setData(d)
@@ -43,7 +49,10 @@ export default function TransactionsClient() {
     })
   }
 
-  useEffect(() => { fetchData() }, [])
+  useEffect(() => {
+    setCategoryFilter('Todas')
+    fetchData()
+  }, [viewDate])
 
   async function deleteExpense(id: string) {
     await fetch(`/api/variable-expenses/${id}`, { method: 'DELETE' })
@@ -72,31 +81,51 @@ export default function TransactionsClient() {
     { key: 'installments', label: 'Parcelas', icon: CreditCard },
   ]
 
-  // Category breakdown for variable expenses
-  const categorySummary = data?.variableExpenses.reduce((acc: Record<string, number>, e: any) => {
+  const categorySummary = (data?.variableExpenses ?? []).reduce((acc: Record<string, number>, e: any) => {
     acc[e.category] = (acc[e.category] || 0) + e.amount
     return acc
-  }, {}) ?? {}
+  }, {})
 
   const sortedCategories = Object.entries(categorySummary)
     .sort(([, a], [, b]) => (b as number) - (a as number))
 
-  const totalVariable = data?.variableExpenses.reduce((s: number, e: any) => s + e.amount, 0) ?? 0
-  const totalIncome = data?.incomes.reduce((s: number, i: any) => s + i.amount, 0) ?? 0
+  const totalVariable = (data?.variableExpenses ?? []).reduce((s: number, e: any) => s + e.amount, 0)
+  const totalIncome = (data?.incomes ?? []).reduce((s: number, i: any) => s + i.amount, 0)
 
   const filteredExpenses: any[] = categoryFilter === 'Todas'
     ? data?.variableExpenses ?? []
     : (data?.variableExpenses ?? []).filter((e: any) => e.category === categoryFilter)
 
+  const monthLabel = format(viewDate, "MMMM 'de' yyyy", { locale: ptBR })
+
   return (
     <div className="p-4 md:p-6 pb-24 md:pb-6 max-w-4xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold text-white">Transações</h1>
-          <p className="text-sm text-gray-400">Histórico do mês atual</p>
+          <p className="text-sm text-gray-400 capitalize">{monthLabel}</p>
         </div>
         <button onClick={fetchData} className="btn-secondary p-1.5 rounded-xl">
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+        </button>
+      </div>
+
+      {/* Month navigation */}
+      <div className="flex items-center justify-between bg-gray-900 border border-gray-800 rounded-xl px-4 py-2.5 mb-4">
+        <button
+          onClick={() => setViewDate(d => subMonths(d, 1))}
+          className="p-1.5 rounded-lg hover:bg-gray-800 transition-colors"
+        >
+          <ChevronLeft className="w-5 h-5 text-gray-400" />
+        </button>
+        <span className="text-sm font-semibold text-white capitalize">{monthLabel}</span>
+        <button
+          onClick={() => setViewDate(d => addMonths(d, 1))}
+          disabled={isCurrentMonth}
+          className="p-1.5 rounded-lg hover:bg-gray-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+        >
+          <ChevronRight className="w-5 h-5 text-gray-400" />
         </button>
       </div>
 
@@ -114,10 +143,7 @@ export default function TransactionsClient() {
                     <span className="text-gray-400">{formatCurrency(amount as number)} ({Math.round(pct)}%)</span>
                   </div>
                   <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-red-500 rounded-full transition-all"
-                      style={{ width: `${pct}%` }}
-                    />
+                    <div className="h-full bg-red-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
                   </div>
                 </div>
               )
@@ -137,9 +163,7 @@ export default function TransactionsClient() {
             key={t.key}
             onClick={() => setTab(t.key)}
             className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm font-medium transition-colors ${
-              tab === t.key
-                ? 'bg-gray-800 text-white'
-                : 'text-gray-500 hover:text-gray-300'
+              tab === t.key ? 'bg-gray-800 text-white' : 'text-gray-500 hover:text-gray-300'
             }`}
           >
             <t.icon className="w-3.5 h-3.5" />
@@ -150,171 +174,178 @@ export default function TransactionsClient() {
 
       {/* Content */}
       <div className="card">
-        {tab === 'variable' && (
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <RefreshCw className="w-5 h-5 animate-spin text-gray-500" />
+          </div>
+        ) : (
           <>
-            {/* Filtro de categoria */}
-            {data?.variableExpenses.length > 0 && (
-              <div className="flex gap-2 flex-wrap mb-3">
-                {['Todas', ...Object.keys(CATEGORY_COLORS)].map(cat => (
-                  <button
-                    key={cat}
-                    onClick={() => setCategoryFilter(cat)}
-                    className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                      categoryFilter === cat
-                        ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
-                        : 'border-gray-700 text-gray-500 hover:text-gray-300'
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-            )}
-            {filteredExpenses.length === 0 ? (
-              <p className="text-center text-gray-600 py-8">Nenhum gasto registrado.</p>
-            ) : (
-              <div className="divide-y divide-gray-800">
-                {filteredExpenses.map((exp: any) => (
-                  <div key={exp.id} className="flex items-center gap-3 py-3 group">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-white truncate">{exp.description}</p>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className={`text-xs px-1.5 py-0.5 rounded-md ${CATEGORY_COLORS[exp.category] ?? CATEGORY_COLORS['Outros']}`}>
-                          {exp.category}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          {format(new Date(exp.date), "d 'de' MMM 'às' HH:mm", { locale: ptBR })}
-                        </span>
+            {tab === 'variable' && (
+              <>
+                {data?.variableExpenses?.length > 0 && (
+                  <div className="flex gap-2 flex-wrap mb-3">
+                    {['Todas', ...Object.keys(CATEGORY_COLORS)].map(cat => (
+                      <button
+                        key={cat}
+                        onClick={() => setCategoryFilter(cat)}
+                        className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                          categoryFilter === cat
+                            ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
+                            : 'border-gray-700 text-gray-500 hover:text-gray-300'
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {filteredExpenses.length === 0 ? (
+                  <p className="text-center text-gray-600 py-8">Nenhum gasto registrado neste mês.</p>
+                ) : (
+                  <div className="divide-y divide-gray-800">
+                    {filteredExpenses.map((exp: any) => (
+                      <div key={exp.id} className="flex items-center gap-3 py-3 group">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-white truncate">{exp.description}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className={`text-xs px-1.5 py-0.5 rounded-md ${CATEGORY_COLORS[exp.category] ?? CATEGORY_COLORS['Outros']}`}>
+                              {exp.category}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              {format(new Date(exp.date), "d 'de' MMM 'às' HH:mm", { locale: ptBR })}
+                            </span>
+                          </div>
+                        </div>
+                        <span className="text-sm font-bold text-red-400">{formatCurrency(exp.amount)}</span>
+                        <button
+                          onClick={() => deleteExpense(exp.id)}
+                          className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 transition-all"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
-                    </div>
-                    <span className="text-sm font-bold text-red-400">{formatCurrency(exp.amount)}</span>
-                    <button
-                      onClick={() => deleteExpense(exp.id)}
-                      className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 transition-all"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    ))}
                   </div>
-                ))}
-              </div>
+                )}
+              </>
             )}
-          </>
-        )}
 
-        {tab === 'incomes' && (
-          <>
-            {data?.incomes.length === 0 ? (
-              <p className="text-center text-gray-600 py-8">Nenhuma receita cadastrada.</p>
-            ) : (
-              <div className="divide-y divide-gray-800">
-                {data?.incomes.map((inc: any) => (
-                  <div key={inc.id} className="flex items-center gap-3 py-3 group">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-white truncate">{inc.description}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {format(new Date(inc.date), "d 'de' MMMM 'às' HH:mm", { locale: ptBR })}
-                        {inc.recurring && <span className="ml-2 text-emerald-600">Recorrente</span>}
-                      </p>
+            {tab === 'incomes' && (
+              <>
+                {(data?.incomes ?? []).length === 0 ? (
+                  <p className="text-center text-gray-600 py-8">Nenhuma receita neste mês.</p>
+                ) : (
+                  <div className="divide-y divide-gray-800">
+                    {(data?.incomes ?? []).map((inc: any) => (
+                      <div key={inc.id} className="flex items-center gap-3 py-3 group">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-white truncate">{inc.description}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {format(new Date(inc.date), "d 'de' MMMM 'às' HH:mm", { locale: ptBR })}
+                            {inc.recurring && <span className="ml-2 text-emerald-600">Recorrente</span>}
+                          </p>
+                        </div>
+                        <span className="text-sm font-bold text-emerald-400">{formatCurrency(inc.amount)}</span>
+                        <button
+                          onClick={() => deleteIncome(inc.id)}
+                          className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 transition-all"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                    <div className="flex justify-between pt-3 text-sm font-semibold">
+                      <span className="text-gray-400">Total</span>
+                      <span className="text-emerald-400">{formatCurrency(totalIncome)}</span>
                     </div>
-                    <span className="text-sm font-bold text-emerald-400">{formatCurrency(inc.amount)}</span>
-                    <button
-                      onClick={() => deleteIncome(inc.id)}
-                      className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 transition-all"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
                   </div>
-                ))}
-                <div className="flex justify-between pt-3 text-sm font-semibold">
-                  <span className="text-gray-400">Total</span>
-                  <span className="text-emerald-400">{formatCurrency(totalIncome)}</span>
-                </div>
-              </div>
+                )}
+              </>
             )}
-          </>
-        )}
 
-        {tab === 'fixed' && (
-          <>
-            {data?.fixedExpenses.length === 0 ? (
-              <p className="text-center text-gray-600 py-8">Nenhuma despesa fixa cadastrada.</p>
-            ) : (
-              <div className="divide-y divide-gray-800">
-                {data?.fixedExpenses.map((exp: any) => (
-                  <div key={exp.id} className="flex items-center gap-3 py-3 group">
-                    <div className="flex-1 min-w-0">
-                      <p className={`text-sm font-medium truncate ${exp.paid ? 'line-through text-gray-600' : 'text-white'}`}>
-                        {exp.description}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        Vence dia {exp.dueDay}
-                        {exp.paid && <span className="ml-2 text-emerald-500">Pago</span>}
-                      </p>
+            {tab === 'fixed' && (
+              <>
+                {(data?.fixedExpenses ?? []).length === 0 ? (
+                  <p className="text-center text-gray-600 py-8">Nenhuma despesa fixa cadastrada.</p>
+                ) : (
+                  <div className="divide-y divide-gray-800">
+                    {(data?.fixedExpenses ?? []).map((exp: any) => (
+                      <div key={exp.id} className="flex items-center gap-3 py-3 group">
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-medium truncate ${exp.paid ? 'line-through text-gray-600' : 'text-white'}`}>
+                            {exp.description}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            Vence dia {exp.dueDay}
+                            {exp.paid && <span className="ml-2 text-emerald-500">Pago</span>}
+                          </p>
+                        </div>
+                        <span className={`text-sm font-bold ${exp.paid ? 'text-gray-600' : 'text-red-400'}`}>
+                          {formatCurrency(exp.amount)}
+                        </span>
+                        <button
+                          onClick={() => deleteFixed(exp.id)}
+                          className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 transition-all"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                    <div className="flex justify-between pt-3 text-sm font-semibold">
+                      <span className="text-gray-400">Total</span>
+                      <span className="text-red-400">
+                        {formatCurrency((data?.fixedExpenses ?? []).reduce((s: number, e: any) => s + e.amount, 0))}
+                      </span>
                     </div>
-                    <span className={`text-sm font-bold ${exp.paid ? 'text-gray-600' : 'text-red-400'}`}>
-                      {formatCurrency(exp.amount)}
-                    </span>
-                    <button
-                      onClick={() => deleteFixed(exp.id)}
-                      className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 transition-all"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
                   </div>
-                ))}
-                <div className="flex justify-between pt-3 text-sm font-semibold">
-                  <span className="text-gray-400">Total</span>
-                  <span className="text-red-400">
-                    {formatCurrency(data?.fixedExpenses.reduce((s: number, e: any) => s + e.amount, 0) ?? 0)}
-                  </span>
-                </div>
-              </div>
+                )}
+              </>
             )}
-          </>
-        )}
 
-        {tab === 'installments' && (
-          <>
-            <div className="flex justify-end mb-3">
-              <button
-                onClick={() => setShowInstallmentModal(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium rounded-lg transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                Adicionar
-              </button>
-            </div>
-            {installments.length === 0 ? (
-              <p className="text-center text-gray-600 py-8">Nenhuma parcela cadastrada.</p>
-            ) : (
-              <div className="divide-y divide-gray-800">
-                {installments.map((inst: any) => (
-                  <div key={inst.id} className="flex items-center gap-3 py-3 group">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-white truncate">{inst.description}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        Vence dia {inst.dueDay} · {inst.remainingInstallments}/{inst.totalInstallments} parcelas restantes
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-sm font-bold text-purple-400">{formatCurrency(Number(inst.amount))}</span>
-                      <p className="text-xs text-gray-500">por parcela</p>
-                    </div>
-                    <button
-                      onClick={() => deleteInstallment(inst.id)}
-                      className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 transition-all"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
-                <div className="flex justify-between pt-3 text-sm font-semibold">
-                  <span className="text-gray-400">Total mensal</span>
-                  <span className="text-purple-400">
-                    {formatCurrency(installments.reduce((s: number, i: any) => s + Number(i.amount), 0))}
-                  </span>
+            {tab === 'installments' && (
+              <>
+                <div className="flex justify-end mb-3">
+                  <button
+                    onClick={() => setShowInstallmentModal(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white text-sm font-medium rounded-lg transition-colors"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Adicionar
+                  </button>
                 </div>
-              </div>
+                {installments.length === 0 ? (
+                  <p className="text-center text-gray-600 py-8">Nenhuma parcela cadastrada.</p>
+                ) : (
+                  <div className="divide-y divide-gray-800">
+                    {installments.map((inst: any) => (
+                      <div key={inst.id} className="flex items-center gap-3 py-3 group">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-white truncate">{inst.description}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            Vence dia {inst.dueDay} · {inst.remainingInstallments}/{inst.totalInstallments} parcelas restantes
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-sm font-bold text-purple-400">{formatCurrency(Number(inst.amount))}</span>
+                          <p className="text-xs text-gray-500">por parcela</p>
+                        </div>
+                        <button
+                          onClick={() => deleteInstallment(inst.id)}
+                          className="opacity-0 group-hover:opacity-100 text-gray-600 hover:text-red-400 transition-all"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
+                    <div className="flex justify-between pt-3 text-sm font-semibold">
+                      <span className="text-gray-400">Total mensal</span>
+                      <span className="text-purple-400">
+                        {formatCurrency(installments.reduce((s: number, i: any) => s + Number(i.amount), 0))}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </>
         )}
