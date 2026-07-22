@@ -2,26 +2,38 @@ export const dynamic = 'force-dynamic'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { requireAuth } from '@/lib/api-auth'
-import { getDaysInMonth, isSameDay, startOfMonth, endOfMonth } from 'date-fns'
+import { getDaysInMonth, startOfMonth, endOfMonth } from 'date-fns'
+
+// Convert any UTC date to Brazil (UTC-3) date string "YYYY-MM-DD"
+const toBrazilDateStr = (d: Date) =>
+  new Date(d.getTime() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10)
+
+const padZ = (n: number) => String(n).padStart(2, '0')
 
 export async function GET(req: Request) {
   const { userId, response } = await requireAuth()
   if (!userId) return response!
 
   const { searchParams } = new URL(req.url)
-  const today = new Date()
-  const todayDay = today.getDate()
 
-  const targetMonth = parseInt(searchParams.get('month') ?? String(today.getMonth() + 1)) - 1
-  const targetYear = parseInt(searchParams.get('year') ?? String(today.getFullYear()))
+  // Determine today in Brazil timezone (UTC-3)
+  const nowUTC = new Date()
+  const todayBrazilStr = toBrazilDateStr(nowUTC)
+  const todayYear = parseInt(todayBrazilStr.slice(0, 4))
+  const todayMonth = parseInt(todayBrazilStr.slice(5, 7)) - 1  // 0-indexed
+  const todayDay = parseInt(todayBrazilStr.slice(8, 10))
 
-  const isCurrentMonth = targetMonth === today.getMonth() && targetYear === today.getFullYear()
-  const isFuture = targetYear > today.getFullYear() ||
-    (targetYear === today.getFullYear() && targetMonth > today.getMonth())
-  const monthsElapsedToTarget = (targetYear - today.getFullYear()) * 12 + (targetMonth - today.getMonth())
+  const targetMonth = parseInt(searchParams.get('month') ?? String(todayMonth + 1)) - 1
+  const targetYear = parseInt(searchParams.get('year') ?? String(todayYear))
 
-  const currentStart = startOfMonth(today)
-  const currentEnd = endOfMonth(today)
+  const isCurrentMonth = targetMonth === todayMonth && targetYear === todayYear
+  const isFuture = targetYear > todayYear ||
+    (targetYear === todayYear && targetMonth > todayMonth)
+  const monthsElapsedToTarget = (targetYear - todayYear) * 12 + (targetMonth - todayMonth)
+
+  const todayLocal = new Date(todayYear, todayMonth, todayDay)
+  const currentStart = startOfMonth(todayLocal)
+  const currentEnd = endOfMonth(todayLocal)
   const targetStart = startOfMonth(new Date(targetYear, targetMonth))
   const targetEnd = endOfMonth(new Date(targetYear, targetMonth))
 
@@ -47,12 +59,12 @@ export async function GET(req: Request) {
 
   if (isFuture) {
     // Finish current month (today → end of month)
-    const daysInCurrent = getDaysInMonth(today)
+    const daysInCurrent = getDaysInMonth(todayLocal)
     for (let d = todayDay; d <= daysInCurrent; d++) {
-      const date = new Date(today.getFullYear(), today.getMonth(), d)
+      const dStr = `${todayYear}-${padZ(todayMonth + 1)}-${padZ(d)}`
       const dayIn = [
         ...recurringIncomes.filter(i => new Date(i.date).getDate() === d),
-        ...currentMonthIncomes.filter(i => isSameDay(new Date(i.date), date)),
+        ...currentMonthIncomes.filter(i => toBrazilDateStr(new Date(i.date)) === dStr),
       ].reduce((s, i) => s + Number(i.amount), 0)
       const dayOut = [
         ...fixedExpenses.filter(e => e.dueDay === d && !e.paid),
@@ -90,20 +102,18 @@ export async function GET(req: Request) {
     const isFutureDay = !isToday && !isPast
 
     // ── Incomes ──
+    const dayStr = `${targetYear}-${padZ(targetMonth + 1)}-${padZ(d)}`
     let dayIncomeEntries
     if (isFutureDay) {
-      // Future: recurring on this day + non-recurring explicitly scheduled for this future date
-      dayIncomeEntries = allTargetIncomes
-        .filter(i => {
-          if (i.recurring) return new Date(i.date).getDate() === d
-          return isSameDay(new Date(i.date), date)
-        })
-    } else {
-      // Past / today: actual DB incomes
       dayIncomeEntries = allTargetIncomes
         .filter(i => i.recurring
           ? new Date(i.date).getDate() === d
-          : isSameDay(new Date(i.date), date))
+          : toBrazilDateStr(new Date(i.date)) === dayStr)
+    } else {
+      dayIncomeEntries = allTargetIncomes
+        .filter(i => i.recurring
+          ? new Date(i.date).getDate() === d
+          : toBrazilDateStr(new Date(i.date)) === dayStr)
     }
     const dayIncomes = dayIncomeEntries.map(i => ({
       description: i.description, amount: Number(i.amount), type: 'income' as const,
@@ -131,7 +141,7 @@ export async function GET(req: Request) {
 
     // ── Variable expenses (only past / today — future is unpredictable) ──
     const dayVariable = isFutureDay ? [] : allTargetVariables
-      .filter(e => isSameDay(new Date(e.date), date))
+      .filter(e => toBrazilDateStr(new Date(e.date)) === dayStr)
       .map(e => ({
         description: e.description, amount: Number(e.amount),
         type: 'variable' as const, category: e.category,
