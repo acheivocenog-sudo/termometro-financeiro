@@ -61,9 +61,14 @@ export function calculateFinancials(data: FinancialData, referenceDate: Date = n
   // Orçamento diário = saldo projetado / dias restantes
   const dailyBudget = daysRemaining > 0 ? projectedBalance / daysRemaining : projectedBalance
 
-  // Gastos de hoje
+  // Gastos de hoje (comparação em UTC-3 para evitar divergência de timezone)
+  const toLocalDateStr = (d: Date) => {
+    const brazil = new Date(d.getTime() - 3 * 60 * 60 * 1000)
+    return brazil.toISOString().slice(0, 10)
+  }
+  const todayStr = toLocalDateStr(today)
   const todaySpent = data.todayVariableExpenses
-    .filter(e => isSameDay(new Date(e.date), today))
+    .filter(e => toLocalDateStr(new Date(e.date)) === todayStr)
     .reduce((sum, e) => sum + e.amount, 0)
 
   // Termômetro
