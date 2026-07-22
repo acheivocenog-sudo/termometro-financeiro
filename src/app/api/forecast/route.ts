@@ -82,6 +82,9 @@ export async function GET(req: Request) {
   // For current month: runningBalance starts at currentBalance (user's balance right now = end of today).
   // Past days get their entries listed but balance = null (we don't track historical daily balances).
   // Today and future: project from currentBalance.
+  // runningBalance starts at currentBalance (user's actual account balance right now).
+  // currentBalance already reflects ALL past and today's transactions.
+  // We project FORWARD from today: only future fixed expenses, installments, and scheduled incomes.
   let runningBalance = startingBalance
   const days = []
 
@@ -90,45 +93,63 @@ export async function GET(req: Request) {
     const isToday = isCurrentMonth && d === todayDay
     const isPast = isCurrentMonth && d < todayDay
 
-    // For past days: show recorded entries but no projected balance
+    // Past days: show recorded entries for context but no projected balance
     if (isPast) {
       const dayIncomes = allTargetIncomes
         .filter(i => i.recurring ? new Date(i.date).getDate() === d : isSameDay(new Date(i.date), date))
         .map(i => ({ description: i.description, amount: Number(i.amount), type: 'income' as const }))
-
       const dayFixed = fixedExpenses
         .filter(e => e.dueDay === d)
         .map(e => ({ description: e.description, amount: Number(e.amount), type: 'fixed' as const, paid: e.paid }))
-
       const dayInstallments = installments
         .filter(i => i.dueDay === d)
-        .map(i => ({ description: `${i.description}`, amount: Number(i.amount), type: 'installment' as const }))
-
+        .map(i => ({ description: i.description, amount: Number(i.amount), type: 'installment' as const }))
       const dayVariable = allTargetVariables
         .filter(e => isSameDay(new Date(e.date), date))
         .map(e => ({ description: e.description, amount: Number(e.amount), type: 'variable' as const, category: e.category }))
-
       const entries = [...dayIncomes, ...dayFixed, ...dayInstallments, ...dayVariable]
       const totalIn = dayIncomes.reduce((s, e) => s + e.amount, 0)
       const totalOut = [...dayFixed, ...dayInstallments, ...dayVariable].reduce((s, e) => s + e.amount, 0)
-
       days.push({ day: d, date: date.toISOString(), isToday: false, isPast: true, entries, totalIn, totalOut, balance: null })
       continue
     }
 
-    // Today and future: build projected running balance
+    // Today: currentBalance IS the real balance right now (already includes today's events).
+    // Show today's entries for context but don't re-apply them to the balance.
+    if (isToday) {
+      const dayIncomes = allTargetIncomes
+        .filter(i => i.recurring ? new Date(i.date).getDate() === d : isSameDay(new Date(i.date), date))
+        .map(i => ({ description: i.description, amount: Number(i.amount), type: 'income' as const }))
+      const dayVariable = allTargetVariables
+        .filter(e => isSameDay(new Date(e.date), date))
+        .map(e => ({ description: e.description, amount: Number(e.amount), type: 'variable' as const, category: e.category }))
+      const dayFixed = fixedExpenses
+        .filter(e => e.dueDay === d)
+        .map(e => ({ description: e.description, amount: Number(e.amount), type: 'fixed' as const, paid: e.paid }))
+      const dayInstallments = installments
+        .filter(i => i.dueDay === d && i.remainingInstallments > monthsElapsedToTarget)
+        .map(i => ({ description: `${i.description}`, amount: Number(i.amount), type: 'installment' as const }))
+      const entries = [...dayIncomes, ...dayFixed, ...dayInstallments, ...dayVariable]
+      const totalIn = dayIncomes.reduce((s, e) => s + e.amount, 0)
+      const totalOut = [...dayFixed, ...dayInstallments, ...dayVariable].reduce((s, e) => s + e.amount, 0)
+      days.push({ day: d, date: date.toISOString(), isToday: true, isPast: false, entries, totalIn, totalOut, balance: runningBalance })
+      continue
+    }
+
+    // Future days: apply only unpaid fixed expenses, pending installments, and scheduled incomes.
     const dayIncomes = allTargetIncomes
-      .filter(i => i.recurring ? new Date(i.date).getDate() === d : isSameDay(new Date(i.date), date))
+      .filter(i => {
+        if (i.recurring) return new Date(i.date).getDate() === d
+        // Non-recurring: only if date is strictly after today
+        const incDate = new Date(i.date)
+        return incDate > new Date(targetYear, targetMonth, todayDay, 23, 59, 59)
+          && isSameDay(incDate, date)
+      })
       .map(i => ({ description: i.description, amount: Number(i.amount), type: 'income' as const }))
 
     const dayFixed = fixedExpenses
-      .filter(e => e.dueDay === d)
-      .map(e => ({
-        description: e.description,
-        amount: Number(e.amount),
-        type: 'fixed' as const,
-        paid: isCurrentMonth ? e.paid : false,
-      }))
+      .filter(e => e.dueDay === d && !e.paid)
+      .map(e => ({ description: e.description, amount: Number(e.amount), type: 'fixed' as const, paid: false }))
 
     const dayInstallments = installments
       .filter(i => i.dueDay === d && i.remainingInstallments > monthsElapsedToTarget)
@@ -139,20 +160,13 @@ export async function GET(req: Request) {
         remainingInstallments: i.remainingInstallments - monthsElapsedToTarget,
       }))
 
-    // For today: include actual recorded variable expenses. For future: none (unpredictable).
-    const dayVariable = isToday
-      ? allTargetVariables
-          .filter(e => isSameDay(new Date(e.date), date))
-          .map(e => ({ description: e.description, amount: Number(e.amount), type: 'variable' as const, category: e.category }))
-      : []
-
-    const entries = [...dayIncomes, ...dayFixed, ...dayInstallments, ...dayVariable]
+    const entries = [...dayIncomes, ...dayFixed, ...dayInstallments]
     const totalIn = dayIncomes.reduce((s, e) => s + e.amount, 0)
-    const totalOut = [...dayFixed, ...dayInstallments, ...dayVariable].reduce((s, e) => s + e.amount, 0)
+    const totalOut = [...dayFixed, ...dayInstallments].reduce((s, e) => s + e.amount, 0)
 
     runningBalance = runningBalance + totalIn - totalOut
 
-    days.push({ day: d, date: date.toISOString(), isToday, isPast: false, entries, totalIn, totalOut, balance: runningBalance })
+    days.push({ day: d, date: date.toISOString(), isToday: false, isPast: false, entries, totalIn, totalOut, balance: runningBalance })
   }
 
   return NextResponse.json({ days, currentBalance, isFuture, isCurrentMonth })
