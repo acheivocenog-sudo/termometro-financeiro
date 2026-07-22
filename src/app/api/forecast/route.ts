@@ -148,11 +148,7 @@ export async function GET(req: Request) {
 
     const entries = [...dayIncomes, ...dayFixed, ...dayInstallments, ...dayVariable]
     const totalIn = dayIncomes.reduce((s, e) => s + e.amount, 0)
-    // For today: already-paid fixed expenses and today's variable expenses are already reflected
-    // in currentBalance, so only count unpaid fixed expenses for today
-    const totalOut = isToday
-      ? [...dayFixed.filter(e => !e.paid), ...dayInstallments, ...dayVariable].reduce((s, e) => s + e.amount, 0)
-      : [...dayFixed, ...dayInstallments].reduce((s, e) => s + e.amount, 0)
+    const totalOut = [...dayFixed, ...dayInstallments, ...dayVariable].reduce((s, e) => s + e.amount, 0)
 
     runningBalance = runningBalance + totalIn - totalOut
 
