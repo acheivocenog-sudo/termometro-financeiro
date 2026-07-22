@@ -37,49 +37,13 @@ export async function GET(req: Request) {
     isCurrentMonth ? Promise.resolve([]) : prisma.variableExpense.findMany({ where: { userId, date: { gte: targetStart, lte: targetEnd } } }),
   ])
 
+  // currentBalance = the balance the user manually set (treated as month-start anchor).
+  // We project forward from there, applying actual recorded transactions day by day.
   const currentBalance = Number(balance?.amount ?? 0)
-
-  // ─── RECONSTRUCT MONTH-START BALANCE ────────────────────────────────────────
-  // currentBalance = user's actual account balance right now (after all past transactions).
-  // To find what the balance was on day 1 of this month, we reverse everything that happened:
-  //   + add back variable expenses (undo spending)
-  //   - subtract received incomes (undo receiving)
-  //   + add back paid fixed expenses (undo bill payments)
-  // This gives us the clean month-start balance to replay from.
-  let monthStartBalance = currentBalance
-
-  if (isCurrentMonth) {
-    // Undo all variable expenses recorded this month
-    for (const exp of currentVariableExpenses) {
-      monthStartBalance += Number(exp.amount)
-    }
-    // Undo non-recurring incomes received this month
-    for (const inc of currentMonthIncomes) {
-      monthStartBalance -= Number(inc.amount)
-    }
-    // Undo recurring incomes whose due day fell on or before today
-    for (const inc of recurringIncomes) {
-      const dueDay = new Date(inc.date).getDate()
-      if (dueDay <= todayDay) {
-        monthStartBalance -= Number(inc.amount)
-      }
-    }
-    // Undo PAID fixed expenses (only paid ones were actually deducted from account)
-    for (const exp of fixedExpenses) {
-      if (exp.paid && exp.dueDay <= todayDay) {
-        monthStartBalance += Number(exp.amount)
-      }
-    }
-    // Undo installment payments for this month (due day passed, still has remaining)
-    for (const inst of installments) {
-      if (inst.dueDay <= todayDay) {
-        monthStartBalance += Number(inst.amount)
-      }
-    }
-  }
+  const monthStartBalance = currentBalance
 
   // ─── PROJECT START BALANCE FOR FUTURE MONTHS ────────────────────────────────
-  let startingBalance = isCurrentMonth ? monthStartBalance : currentBalance
+  let startingBalance = currentBalance
 
   if (isFuture) {
     // Finish current month (today → end of month)
