@@ -13,10 +13,14 @@ export async function GET() {
   const monthStart = startOfMonth(today)
   const monthEnd = endOfMonth(today)
 
-  const [balance, incomes, fixedExpenses, variableExpenses] = await Promise.all([
+  const [balance, monthIncomes, recurringIncomes, fixedExpenses, variableExpenses] = await Promise.all([
     prisma.balance.findUnique({ where: { userId } }),
     prisma.income.findMany({
-      where: { userId, date: { gte: monthStart, lte: monthEnd } },
+      where: { userId, recurring: false, date: { gte: monthStart, lte: monthEnd } },
+      orderBy: { date: 'asc' },
+    }),
+    prisma.income.findMany({
+      where: { userId, recurring: true },
       orderBy: { date: 'asc' },
     }),
     prisma.fixedExpense.findMany({ where: { userId }, orderBy: { dueDay: 'asc' } }),
@@ -26,9 +30,11 @@ export async function GET() {
     }),
   ])
 
+  const allIncomes = [...monthIncomes, ...recurringIncomes]
+
   const data = {
     currentBalance: Number(balance?.amount ?? 0),
-    futureIncomes: incomes.map(i => ({ ...i, amount: Number(i.amount) })),
+    futureIncomes: allIncomes.map(i => ({ ...i, amount: Number(i.amount) })),
     futureFixedExpenses: fixedExpenses.map(e => ({ ...e, amount: Number(e.amount) })),
     todayVariableExpenses: variableExpenses.map(e => ({ ...e, amount: Number(e.amount) })),
     allVariableExpenses: variableExpenses.map(e => ({ ...e, amount: Number(e.amount) })),
@@ -39,7 +45,7 @@ export async function GET() {
 
   return NextResponse.json({
     summary,
-    incomes: incomes.map(i => ({ ...i, amount: Number(i.amount) })),
+    incomes: allIncomes.map(i => ({ ...i, amount: Number(i.amount) })),
     fixedExpenses: fixedExpenses.map(e => ({ ...e, amount: Number(e.amount) })),
     variableExpenses: variableExpenses.map(e => ({ ...e, amount: Number(e.amount) })),
     calendar,
