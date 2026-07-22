@@ -155,8 +155,8 @@ export default function ForecastClient() {
                 return (
                   <div key={day.day} className={`border-l-2 ${day.isToday ? 'border-blue-500' : 'border-transparent'}`}>
                     <div
-                      className={`grid grid-cols-5 px-4 py-3 text-sm ${day.isPast ? 'opacity-40' : 'cursor-pointer hover:bg-zinc-800/30'} transition-colors ${day.balance !== null ? getBalanceBg(day.balance, day.isToday) : ''}`}
-                      onClick={() => hasEntries && setExpandedDay(isExpanded ? null : day.day)}
+                      className={`grid grid-cols-5 px-4 py-3 text-sm ${day.isPast ? 'opacity-50' : 'cursor-pointer hover:bg-zinc-800/30'} transition-colors ${day.balance !== null ? getBalanceBg(day.balance, day.isToday) : ''}`}
+                      onClick={() => !day.isPast && hasEntries && setExpandedDay(isExpanded ? null : day.day)}
                     >
                       <div className="flex items-center gap-2">
                         <div className="flex flex-col">

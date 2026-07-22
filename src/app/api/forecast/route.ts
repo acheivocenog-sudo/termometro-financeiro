@@ -38,45 +38,50 @@ export async function GET(req: Request) {
   ])
 
   const currentBalance = Number(balance?.amount ?? 0)
+  const todayDay = today.getDate()
 
-  // --- CURRENT MONTH: reconstruct month-start balance ---
-  // currentBalance already reflects all past transactions.
-  // To find what the balance was on day 1, undo actual recorded transactions up to today.
-  let monthStartBalance = currentBalance
+  // --- CURRENT MONTH: reconstruct start-of-month balance ---
+  // currentBalance is manually set by the user (reflects right now).
+  // We undo all recorded transactions so far to get what the balance was on day 1,
+  // then replay day-by-day to build the running balance.
+  let startingBalance = currentBalance
+
   if (isCurrentMonth) {
-    // Undo incomes recorded so far this month
+    // Undo non-recurring incomes recorded so far
     for (const inc of currentMonthIncomes) {
-      monthStartBalance -= Number(inc.amount)
+      startingBalance -= Number(inc.amount)
     }
+    // Undo recurring incomes that already fell this month (dueDay <= today)
     for (const inc of recurringIncomes) {
-      const incDay = new Date(inc.date).getDate()
-      if (incDay <= today.getDate()) {
-        monthStartBalance -= Number(inc.amount)
+      if (new Date(inc.date).getDate() <= todayDay) {
+        startingBalance -= Number(inc.amount)
       }
     }
-    // Undo variable expenses recorded so far this month
+    // Undo variable expenses recorded so far
     for (const exp of currentVariableExpenses) {
-      monthStartBalance += Number(exp.amount)
+      startingBalance += Number(exp.amount)
     }
-    // Undo fixed expenses and installments due before or on today
+    // Undo fixed expenses that were due on or before today
     for (const exp of fixedExpenses) {
-      if (exp.dueDay <= today.getDate()) {
-        monthStartBalance += Number(exp.amount)
+      if (exp.dueDay <= todayDay) {
+        startingBalance += Number(exp.amount)
       }
     }
+    // Undo installments that were due on or before today
     for (const inst of installments) {
-      if (inst.dueDay <= today.getDate()) {
-        monthStartBalance += Number(inst.amount)
+      if (inst.dueDay <= todayDay) {
+        startingBalance += Number(inst.amount)
       }
     }
   }
 
   // --- FUTURE MONTH: project forward from current balance ---
-  let startingBalance = currentBalance
   if (isFuture) {
+    startingBalance = currentBalance
+
     // Finish current month from today onward
     const daysInCurrentMonth = getDaysInMonth(today)
-    for (let d = today.getDate(); d <= daysInCurrentMonth; d++) {
+    for (let d = todayDay; d <= daysInCurrentMonth; d++) {
       const date = new Date(today.getFullYear(), today.getMonth(), d)
       const dayIn = [
         ...recurringIncomes.filter(i => new Date(i.date).getDate() === d),
@@ -98,30 +103,22 @@ export async function GET(req: Request) {
         + installments.filter(i => i.remainingInstallments > m).reduce((s, i) => s + Number(i.amount), 0)
       startingBalance += monthlyIn - monthlyOut
     }
-
-    monthStartBalance = startingBalance
   }
 
-  // --- BUILD DAY-BY-DAY TABLE (full month) ---
+  // --- BUILD DAY-BY-DAY TABLE (full month, all days) ---
   const allTargetIncomes = isCurrentMonth
     ? [...recurringIncomes, ...currentMonthIncomes]
     : [...recurringIncomes, ...targetMonthIncomes]
   const allTargetVariables = isCurrentMonth ? currentVariableExpenses : targetVariableExpenses
 
   const totalDays = getDaysInMonth(new Date(targetYear, targetMonth))
-  let runningBalance = isCurrentMonth ? currentBalance : startingBalance
+  let runningBalance = startingBalance
   const days = []
 
   for (let d = 1; d <= totalDays; d++) {
     const date = new Date(targetYear, targetMonth, d)
-    const isToday = isCurrentMonth && d === today.getDate()
-    const isPast = isCurrentMonth && d < today.getDate()
-
-    // Past days show empty — saldo atual é o ponto de partida a partir de hoje
-    if (isPast) {
-      days.push({ day: d, date: date.toISOString(), isToday: false, isPast: true, entries: [], totalIn: 0, totalOut: 0, balance: null })
-      continue
-    }
+    const isToday = isCurrentMonth && d === todayDay
+    const isPast = isCurrentMonth && d < todayDay
 
     const dayIncomes = allTargetIncomes
       .filter(i => i.recurring ? new Date(i.date).getDate() === d : isSameDay(new Date(i.date), date))
@@ -145,9 +142,13 @@ export async function GET(req: Request) {
         remainingInstallments: i.remainingInstallments - monthsElapsedToTarget,
       }))
 
-    const dayVariable = allTargetVariables
-      .filter(e => isSameDay(new Date(e.date), date))
-      .map(e => ({ description: e.description, amount: Number(e.amount), type: 'variable' as const, category: e.category }))
+    // Past and today: apply actual recorded variable expenses
+    // Future: no variable expenses (unpredictable)
+    const dayVariable = (isPast || isToday)
+      ? allTargetVariables
+          .filter(e => isSameDay(new Date(e.date), date))
+          .map(e => ({ description: e.description, amount: Number(e.amount), type: 'variable' as const, category: e.category }))
+      : []
 
     const entries = [...dayIncomes, ...dayFixed, ...dayInstallments, ...dayVariable]
     const totalIn = dayIncomes.reduce((s, e) => s + e.amount, 0)
@@ -155,8 +156,8 @@ export async function GET(req: Request) {
 
     runningBalance = runningBalance + totalIn - totalOut
 
-    days.push({ day: d, date: date.toISOString(), isToday, isPast: false, entries, totalIn, totalOut, balance: runningBalance })
+    days.push({ day: d, date: date.toISOString(), isToday, isPast, entries, totalIn, totalOut, balance: runningBalance })
   }
 
-  return NextResponse.json({ days, currentBalance: isCurrentMonth ? monthStartBalance : startingBalance, isFuture, isCurrentMonth })
+  return NextResponse.json({ days, currentBalance: startingBalance, isFuture, isCurrentMonth })
 }
