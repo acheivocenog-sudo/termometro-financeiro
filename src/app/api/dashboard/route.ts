@@ -5,77 +5,97 @@ import { requireAuth } from '@/lib/api-auth'
 import { calculateFinancials, buildCalendarData } from '@/lib/finance'
 import { startOfMonth, endOfMonth, getDaysInMonth, addMonths } from 'date-fns'
 
+const fmt = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
+
 function calculateRunway(
   realBalance: number,
   monthlyLivingCost: number,
   recurringIncomes: { amount: number; date: Date }[],
-  fixedExpenses: { amount: number; dueDay: number }[],
+  fixedExpenses: { amount: number; dueDay: number; paid: boolean }[],
   installments: { amount: number; dueDay: number; remainingInstallments: number }[],
   startDate: Date,
 ) {
   if (monthlyLivingCost <= 0) return null
 
-  // Variable daily cost = living cost minus tracked fixed expenses and installments
-  const monthlyFixed = fixedExpenses.reduce((s, e) => s + e.amount, 0)
-  const monthlyInstallments = installments.reduce((s, i) => s + i.amount, 0)
-  const monthlyRecurring = recurringIncomes.reduce((s, i) => s + i.amount, 0)
-  // Net daily variable spending (living cost minus already-tracked bills)
-  const netVariableCost = Math.max(0, monthlyLivingCost - monthlyFixed - monthlyInstallments - monthlyRecurring)
-
   let balance = realBalance
   const today = new Date(startDate)
   today.setHours(0, 0, 0, 0)
+  const todayDay = today.getDate()
 
-  // Project day by day for up to 36 months
+  const checkNegative = (year: number, month: number, d: number) => {
+    if (balance < 0) {
+      return {
+        date: new Date(year, month, d),
+        shortfall: Math.abs(balance),
+        lastPaidDescription: `Falta ${fmt(Math.abs(balance))} para cobrir os gastos deste dia`,
+      }
+    }
+    return null
+  }
+
   for (let monthOffset = 0; monthOffset < 36; monthOffset++) {
     const monthDate = addMonths(today, monthOffset)
     const year = monthDate.getFullYear()
     const month = monthDate.getMonth()
     const daysInMonth = getDaysInMonth(monthDate)
-    const startDay = monthOffset === 0 ? today.getDate() : 1
-    const dailyVariable = netVariableCost / daysInMonth
+    const isCurrentMonth = monthOffset === 0
+    const startDay = isCurrentMonth ? todayDay + 1 : 1
 
-    for (let d = startDay; d <= daysInMonth; d++) {
-      // Recurring incomes on this day
-      for (const inc of recurringIncomes) {
-        if (new Date(inc.date).getDate() === d) balance += inc.amount
-      }
-      // Fixed expenses on this day
-      for (const exp of fixedExpenses) {
-        if (exp.dueDay === d) {
-          const prevBalance = balance
-          balance -= exp.amount
-          if (balance < 0) {
-            return {
-              date: new Date(year, month, d),
-              shortfall: Math.abs(balance),
-              lastPaidDescription: `Falta ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Math.abs(balance))} para cobrir os gastos deste dia`,
-            }
+    if (isCurrentMonth) {
+      // Current month: realCurrentBalance already reflects this month's spending.
+      // Only apply UNPAID fixed expenses and installments still due this month,
+      // plus recurring incomes not yet received. No daily variable cost.
+      for (let d = startDay; d <= daysInMonth; d++) {
+        // Recurring incomes
+        for (const inc of recurringIncomes) {
+          if (new Date(inc.date).getDate() === d) balance += inc.amount
+        }
+        // Only UNPAID fixed expenses
+        for (const exp of fixedExpenses) {
+          if (exp.dueDay === d && !exp.paid) {
+            balance -= exp.amount
+            const neg = checkNegative(year, month, d); if (neg) return neg
+          }
+        }
+        // Installments (offset 0 = this month)
+        for (const inst of installments) {
+          if (inst.dueDay === d) {
+            balance -= inst.amount
+            const neg = checkNegative(year, month, d); if (neg) return neg
           }
         }
       }
-      // Installments on this day
-      for (let idx = 0; idx < installments.length; idx++) {
-        const inst = installments[idx]
-        if (inst.dueDay === d && inst.remainingInstallments > monthOffset) {
-          balance -= inst.amount
-          if (balance < 0) {
-            return {
-              date: new Date(year, month, d),
-              shortfall: Math.abs(balance),
-              lastPaidDescription: `Falta ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Math.abs(balance))} para cobrir os gastos deste dia`,
-            }
+    } else {
+      // Future months: full monthly living cost spread daily, plus precise bill dates
+      const monthlyFixed = fixedExpenses.reduce((s, e) => s + e.amount, 0)
+      const monthlyInst = installments
+        .filter(i => i.remainingInstallments > monthOffset)
+        .reduce((s, i) => s + i.amount, 0)
+      const monthlyRec = recurringIncomes.reduce((s, i) => s + i.amount, 0)
+      const netDailyVariable = Math.max(0, monthlyLivingCost - monthlyFixed - monthlyInst - monthlyRec) / daysInMonth
+
+      for (let d = 1; d <= daysInMonth; d++) {
+        // Recurring incomes
+        for (const inc of recurringIncomes) {
+          if (new Date(inc.date).getDate() === d) balance += inc.amount
+        }
+        // Fixed expenses
+        for (const exp of fixedExpenses) {
+          if (exp.dueDay === d) {
+            balance -= exp.amount
+            const neg = checkNegative(year, month, d); if (neg) return neg
           }
         }
-      }
-      // Daily variable cost
-      balance -= dailyVariable
-      if (balance < 0) {
-        return {
-          date: new Date(year, month, d),
-          shortfall: Math.abs(balance),
-          lastPaidDescription: `Falta ${new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Math.abs(balance))} para cobrir os gastos deste dia`,
+        // Installments
+        for (const inst of installments) {
+          if (inst.dueDay === d && inst.remainingInstallments > monthOffset) {
+            balance -= inst.amount
+            const neg = checkNegative(year, month, d); if (neg) return neg
+          }
         }
+        // Daily variable living cost
+        balance -= netDailyVariable
+        const neg = checkNegative(year, month, d); if (neg) return neg
       }
     }
   }
@@ -134,7 +154,7 @@ export async function GET() {
         summary.realCurrentBalance,
         monthlyLivingCost,
         recurringIncomes.map(i => ({ amount: Number(i.amount), date: i.date })),
-        fixedExpenses.map(e => ({ amount: Number(e.amount), dueDay: e.dueDay })),
+        fixedExpenses.map(e => ({ amount: Number(e.amount), dueDay: e.dueDay, paid: e.paid })),
         installments.map(i => ({ amount: Number(i.amount), dueDay: i.dueDay, remainingInstallments: i.remainingInstallments })),
         today,
       )
