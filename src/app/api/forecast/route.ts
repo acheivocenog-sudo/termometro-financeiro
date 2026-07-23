@@ -63,12 +63,26 @@ export async function GET(req: Request) {
   const monthStartBalance = currentBalance
 
   // ─── PROJECT START BALANCE FOR FUTURE MONTHS ────────────────────────────────
+  // Current month keeps currentBalance as anchor (day-by-day loop replays all DB transactions).
+  // Future months start from realCurrentBalance (what user actually has today), then
+  // apply remaining current-month events, then simulate each intermediate month.
   let startingBalance = currentBalance
 
   if (isFuture) {
-    // Finish current month (today → end of month)
+    // Step 1: compute realCurrentBalance = what the user has right now
+    const variableSpentToDate = currentVariableExpenses
+      .filter(e => toBrazilDateStr(new Date(e.date)) <= todayBrazilStr)
+      .reduce((s, e) => s + Number(e.amount), 0)
+    const incomesReceivedToDate = [
+      ...currentMonthIncomes.filter(i => toBrazilDateStr(new Date(i.date)) <= todayBrazilStr),
+      ...recurringIncomes.filter(i => new Date(i.date).getDate() <= todayDay),
+    ].reduce((s, i) => s + Number(i.amount), 0)
+    const paidFixed = fixedExpenses.filter(e => e.paid).reduce((s, e) => s + Number(e.amount), 0)
+    startingBalance = rawBalance + incomesReceivedToDate - variableSpentToDate - paidFixed - caixinhaNet
+
+    // Step 2: apply remaining current month days (tomorrow → end of current month)
     const daysInCurrent = getDaysInMonth(todayLocal)
-    for (let d = todayDay; d <= daysInCurrent; d++) {
+    for (let d = todayDay + 1; d <= daysInCurrent; d++) {
       const dStr = `${todayYear}-${padZ(todayMonth + 1)}-${padZ(d)}`
       const dayIn = [
         ...recurringIncomes.filter(i => new Date(i.date).getDate() === d),
@@ -77,10 +91,12 @@ export async function GET(req: Request) {
       const dayOut = [
         ...fixedExpenses.filter(e => e.dueDay === d && !e.paid),
         ...installments.filter(i => i.dueDay === d),
+        ...currentVariableExpenses.filter(e => toBrazilDateStr(new Date(e.date)) === dStr),
       ].reduce((s, e) => s + Number(e.amount), 0)
       startingBalance += dayIn - dayOut
     }
-    // Skip intermediate full months
+
+    // Step 3: simulate each intermediate full month between current and target
     for (let m = 1; m < monthsElapsedToTarget; m++) {
       const monthlyIn = recurringIncomes.reduce((s, i) => s + Number(i.amount), 0)
       const monthlyOut = fixedExpenses.reduce((s, e) => s + Number(e.amount), 0)
