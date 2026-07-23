@@ -14,7 +14,7 @@ function calculateRunway(
   monthlyLivingCost: number | null,
   recurringIncomes: { amount: number; date: Date }[],
   fixedExpenses: { amount: number; dueDay: number; paid: boolean }[],
-  installments: { amount: number; dueDay: number; remainingInstallments: number }[],
+  installments: { amount: number; dueDay: number; remainingInstallments: number; startDate: Date }[],
   futureOneTimeIncomes: { amount: number; date: Date }[],
   futureVariableExpenses: { amount: number; date: Date }[],
   startDate: Date,
@@ -71,9 +71,15 @@ function calculateRunway(
 
       // Installments (same as forecast)
       for (const inst of installments) {
-        if (inst.dueDay === d && inst.remainingInstallments > monthOffset) {
-          balance -= inst.amount
-          const neg = checkNegative(year, month, d); if (neg) return neg
+        if (inst.dueDay === d) {
+          const instStart = new Date(inst.startDate)
+          const instStartM = instStart.getFullYear() * 12 + instStart.getMonth()
+          const curM = year * 12 + month
+          const mFromStart = curM - instStartM
+          if (mFromStart >= 0 && mFromStart < inst.remainingInstallments) {
+            balance -= inst.amount
+            const neg = checkNegative(year, month, d); if (neg) return neg
+          }
         }
       }
 
@@ -145,7 +151,7 @@ export async function GET() {
         null,
         recurringIncomes.map(i => ({ amount: Number(i.amount), date: i.date })),
         fixedExpenses.map(e => ({ amount: Number(e.amount), dueDay: e.dueDay, paid: e.paid })),
-        installments.map(i => ({ amount: Number(i.amount), dueDay: i.dueDay, remainingInstallments: i.remainingInstallments })),
+        installments.map(i => ({ amount: Number(i.amount), dueDay: i.dueDay, remainingInstallments: i.remainingInstallments, startDate: i.startDate })),
         futureOneTimeIncomes.map(i => ({ amount: Number(i.amount), date: i.date })),
         futureVariableExpenses.map(e => ({ amount: Number(e.amount), date: e.date })),
         today,

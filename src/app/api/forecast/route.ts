@@ -91,7 +91,14 @@ export async function GET(req: Request) {
       ].reduce((s, i) => s + Number(i.amount), 0)
       const dayOut = [
         ...fixedExpenses.filter(e => e.dueDay === d && !e.paid),
-        ...installments.filter(i => i.dueDay === d),
+        ...installments.filter(i => {
+          if (i.dueDay !== d) return false
+          const instStart = new Date(i.startDate)
+          const instStartM = instStart.getFullYear() * 12 + instStart.getMonth()
+          const curM = todayYear * 12 + todayMonth
+          const mFromStart = curM - instStartM
+          return mFromStart >= 0 && mFromStart < i.remainingInstallments
+        }),
         ...currentVariableExpenses.filter(e => toBrazilDateStr(new Date(e.date)) === dStr),
       ].reduce((s, e) => s + Number(e.amount), 0)
       startingBalance += dayIn - dayOut
@@ -101,7 +108,13 @@ export async function GET(req: Request) {
     for (let m = 1; m < monthsElapsedToTarget; m++) {
       const monthlyIn = recurringIncomes.reduce((s, i) => s + Number(i.amount), 0)
       const monthlyOut = fixedExpenses.reduce((s, e) => s + Number(e.amount), 0)
-        + installments.filter(i => i.remainingInstallments > m).reduce((s, i) => s + Number(i.amount), 0)
+        + installments.filter(i => {
+            const instStart = new Date(i.startDate)
+            const instStartM = instStart.getFullYear() * 12 + instStart.getMonth()
+            const interM = todayYear * 12 + todayMonth + m
+            const mFromStart = interM - instStartM
+            return mFromStart >= 0 && mFromStart < i.remainingInstallments
+          }).reduce((s, i) => s + Number(i.amount), 0)
       startingBalance += monthlyIn - monthlyOut
     }
   }
@@ -158,11 +171,24 @@ export async function GET(req: Request) {
 
     // ── Installments ──
     const dayInstallments = installments
-      .filter(i => i.dueDay === d && i.remainingInstallments > monthsElapsedToTarget)
-      .map(i => ({
-        description: `${i.description} (${i.remainingInstallments - monthsElapsedToTarget}x restantes)`,
-        amount: Number(i.amount), type: 'installment' as const,
-      }))
+      .filter(i => {
+        if (i.dueDay !== d) return false
+        const instStart = new Date(i.startDate)
+        const instStartMonthNum = instStart.getFullYear() * 12 + instStart.getMonth()
+        const targetMonthNum = targetYear * 12 + targetMonth
+        const monthsFromStart = targetMonthNum - instStartMonthNum
+        return monthsFromStart >= 0 && monthsFromStart < i.remainingInstallments
+      })
+      .map(i => {
+        const instStart = new Date(i.startDate)
+        const instStartMonthNum = instStart.getFullYear() * 12 + instStart.getMonth()
+        const targetMonthNum = targetYear * 12 + targetMonth
+        const monthsFromStart = targetMonthNum - instStartMonthNum
+        return {
+          description: `${i.description} (${i.remainingInstallments - monthsFromStart}x restantes)`,
+          amount: Number(i.amount), type: 'installment' as const,
+        }
+      })
 
     // ── Variable expenses: past/today = actual; future = explicitly registered by user ──
     const dayVariable = allTargetVariables

@@ -15,7 +15,6 @@ export default function AddInstallmentModal({ onClose, onSuccess }: Props) {
     totalInstallments: '',
     remainingInstallments: '',
     dueDay: '',
-    startDate: new Date().toISOString().split('T')[0],
   })
   const [loading, setLoading] = useState(false)
 
@@ -23,6 +22,18 @@ export default function AddInstallmentModal({ onClose, onSuccess }: Props) {
     e.preventDefault()
     setLoading(true)
     try {
+      const dueDay = parseInt(form.dueDay)
+      const now = new Date()
+      const todayDay = now.getDate()
+      // If dueDay already passed this month, first installment is next month
+      let startYear = now.getFullYear()
+      let startMonth = now.getMonth()
+      if (dueDay < todayDay) {
+        startMonth += 1
+        if (startMonth > 11) { startMonth = 0; startYear += 1 }
+      }
+      const startDate = `${startYear}-${String(startMonth + 1).padStart(2, '0')}-${String(dueDay).padStart(2, '0')}`
+
       await fetch('/api/installments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -31,8 +42,8 @@ export default function AddInstallmentModal({ onClose, onSuccess }: Props) {
           amount: parseFloat(form.amount.replace(',', '.')),
           totalInstallments: parseInt(form.totalInstallments),
           remainingInstallments: parseInt(form.remainingInstallments),
-          dueDay: parseInt(form.dueDay),
-          startDate: form.startDate,
+          dueDay,
+          startDate,
         }),
       })
       onSuccess()
@@ -111,17 +122,6 @@ export default function AddInstallmentModal({ onClose, onSuccess }: Props) {
               placeholder="Ex: 15"
               value={form.dueDay}
               onChange={e => setForm(f => ({ ...f, dueDay: e.target.value }))}
-            />
-          </div>
-
-          <div>
-            <label className="text-sm text-zinc-400 block mb-1">Data de início</label>
-            <input
-              required
-              type="date"
-              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-green-500"
-              value={form.startDate}
-              onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))}
             />
           </div>
 
