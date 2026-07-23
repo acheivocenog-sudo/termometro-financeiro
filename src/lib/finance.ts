@@ -24,27 +24,24 @@ export interface FinancialSummary {
 
 export function calculateFinancials(data: FinancialData, referenceDate: Date = new Date()): FinancialSummary {
   const today = referenceDate
+  const startOfThisMonth = startOfMonth(today)
   const endOfThisMonth = endOfMonth(today)
 
   // Dias restantes (incluindo hoje)
   const daysRemaining = differenceInDays(endOfThisMonth, today) + 1
 
-  // Receitas a receber: hoje e futuros até fim do mês
-  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 0, 0, 0)
+  // Todas as receitas do mês (passadas + futuras) — currentBalance é o saldo inicial, não o atual
   const futureIncomesTotal = data.futureIncomes
     .filter(i => {
       const d = new Date(i.date)
-      return !isBefore(d, todayStart) && !isAfter(d, endOfThisMonth)
+      return !isBefore(d, startOfThisMonth) && !isAfter(d, endOfThisMonth)
     })
     .reduce((sum, i) => sum + i.amount, 0)
 
-  // Despesas fixas futuras não pagas neste mês
-  const currentDay = today.getDate()
-  const futureFixedExpenses = data.futureFixedExpenses.filter(e => e.dueDay > currentDay && !e.paid)
-  const futureExpensesTotal = futureFixedExpenses.reduce((sum, e) => sum + e.amount, 0)
+  // Todas as despesas fixas do mês (pagas + a pagar)
+  const futureExpensesTotal = data.futureFixedExpenses.reduce((sum, e) => sum + e.amount, 0)
 
   // Total de despesas variáveis já realizadas neste mês
-  const startOfThisMonth = startOfMonth(today)
   const variableExpensesTotalThisMonth = data.allVariableExpenses
     .filter(e => {
       const d = new Date(e.date)
