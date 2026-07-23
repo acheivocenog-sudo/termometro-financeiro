@@ -11,6 +11,7 @@ export interface FinancialData {
 
 export interface FinancialSummary {
   currentBalance: number
+  realCurrentBalance: number
   futureIncomesTotal: number
   futureExpensesTotal: number
   variableExpensesTotalThisMonth: number
@@ -51,11 +52,13 @@ export function calculateFinancials(data: FinancialData, referenceDate: Date = n
     })
     .reduce((sum, e) => sum + e.amount, 0)
 
-  // Saldo disponível = Saldo Atual + Receitas Futuras - Despesas Fixas Futuras
+  const caixinha = (data.allIncomesTotal ?? 0) * 0.10
+
+  // Saldo disponível = Saldo Atual + Receitas do Mês - Despesas Fixas
   const availableBalance = data.currentBalance + futureIncomesTotal - futureExpensesTotal
 
-  // Saldo projetado = disponível - despesas variáveis já realizadas
-  const projectedBalance = availableBalance - variableExpensesTotalThisMonth
+  // Saldo projetado = disponível - gastos variáveis - caixinha
+  const projectedBalance = availableBalance - variableExpensesTotalThisMonth - caixinha
 
   // Orçamento diário = saldo projetado / dias restantes
   const dailyBudget = daysRemaining > 0 ? projectedBalance / daysRemaining : projectedBalance
@@ -90,10 +93,22 @@ export function calculateFinancials(data: FinancialData, referenceDate: Date = n
     }
   }
 
-  const caixinha = (data.allIncomesTotal ?? 0) * 0.10
+  // Receitas já recebidas até hoje (date <= today, Brazil tz)
+  const receivedIncomesTotal = data.futureIncomes
+    .filter(i => toLocalDateStr(new Date(i.date)) <= todayStr)
+    .reduce((sum, i) => sum + i.amount, 0)
+
+  // Fixas já pagas (saíram da conta)
+  const paidFixedTotal = data.futureFixedExpenses
+    .filter(e => e.paid)
+    .reduce((sum, e) => sum + e.amount, 0)
+
+  // Saldo real agora = inicial + recebido - gasto variável - fixas pagas - caixinha
+  const realCurrentBalance = data.currentBalance + receivedIncomesTotal - variableExpensesTotalThisMonth - paidFixedTotal - caixinha
 
   return {
     currentBalance: data.currentBalance,
+    realCurrentBalance,
     futureIncomesTotal,
     futureExpensesTotal,
     variableExpensesTotalThisMonth,

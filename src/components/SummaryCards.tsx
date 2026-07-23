@@ -11,12 +11,12 @@ export default function SummaryCards({ summary }: SummaryCardsProps) {
   const cards = [
     {
       label: 'Saldo Atual',
-      value: formatCurrency(summary.currentBalance),
+      value: formatCurrency(summary.realCurrentBalance),
       icon: Wallet,
-      color: 'text-blue-400',
-      bg: 'bg-blue-500/10',
-      border: 'border-blue-500/20',
-      subtitle: 'Valor em conta hoje',
+      color: summary.realCurrentBalance >= 0 ? 'text-blue-400' : 'text-red-400',
+      bg: summary.realCurrentBalance >= 0 ? 'bg-blue-500/10' : 'bg-red-500/10',
+      border: summary.realCurrentBalance >= 0 ? 'border-blue-500/20' : 'border-red-500/20',
+      subtitle: 'Valor em conta agora',
     },
     {
       label: 'Receitas do Mês',
