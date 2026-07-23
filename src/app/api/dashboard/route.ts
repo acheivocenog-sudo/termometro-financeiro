@@ -7,17 +7,18 @@ import { startOfMonth, endOfMonth, getDaysInMonth, addMonths } from 'date-fns'
 
 const fmt = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v)
 
+// Mirrors the forecast projection exactly: same events, same logic, finds first negative day.
+// monthlyLivingCost adds a daily variable estimate for untracked spending in future months.
 function calculateRunway(
   realBalance: number,
-  monthlyLivingCost: number,
+  monthlyLivingCost: number | null,
   recurringIncomes: { amount: number; date: Date }[],
   fixedExpenses: { amount: number; dueDay: number; paid: boolean }[],
   installments: { amount: number; dueDay: number; remainingInstallments: number }[],
   futureOneTimeIncomes: { amount: number; date: Date }[],
+  futureVariableExpenses: { amount: number; date: Date }[],
   startDate: Date,
 ) {
-  if (monthlyLivingCost <= 0) return null
-
   const toBrazilStr = (d: Date) => new Date(d.getTime() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10)
   const pad = (n: number) => String(n).padStart(2, '0')
 
@@ -45,27 +46,29 @@ function calculateRunway(
     const isCurrentMonth = monthOffset === 0
     const startDay = isCurrentMonth ? todayDay + 1 : 1
 
-    // Daily variable living cost = total monthly cost minus known fixed bills.
-    // Only applied in FUTURE months — remaining current-month days use only known events
-    // because realCurrentBalance already captures this month's actual spending pattern.
+    // Daily variable from monthlyLivingCost — only for future months, only if configured.
+    // Represents daily spending not tracked as fixed bills (food, transport, etc.)
+    // Formula: (total monthly budget - known fixed bills) / days = untracked daily cost
     const monthlyBills = fixedExpenses.reduce((s, e) => s + e.amount, 0)
       + installments.filter(i => i.remainingInstallments > monthOffset).reduce((s, i) => s + i.amount, 0)
-    const dailyVariable = isCurrentMonth ? 0 : Math.max(0, monthlyLivingCost - monthlyBills) / daysInMonth
+    const dailyVariable = (!isCurrentMonth && monthlyLivingCost)
+      ? Math.max(0, monthlyLivingCost - monthlyBills) / daysInMonth
+      : 0
 
     for (let d = startDay; d <= daysInMonth; d++) {
       const dayStr = `${year}-${pad(month + 1)}-${pad(d)}`
 
-      // Recurring incomes (on their scheduled day of month)
+      // Recurring incomes (same as forecast: matched by day-of-month)
       for (const inc of recurringIncomes) {
         if (new Date(inc.date).getDate() === d) balance += inc.amount
       }
 
-      // One-time future incomes (e.g., a bonus scheduled for a specific date)
+      // One-time future incomes registered in DB (same as forecast)
       for (const inc of futureOneTimeIncomes) {
         if (toBrazilStr(new Date(inc.date)) === dayStr) balance += inc.amount
       }
 
-      // Fixed expenses (current month: only unpaid; future months: all)
+      // Fixed expenses (current month: only unpaid; future months: all — same as forecast)
       for (const exp of fixedExpenses) {
         if (exp.dueDay === d) {
           if (isCurrentMonth && exp.paid) continue
@@ -74,7 +77,7 @@ function calculateRunway(
         }
       }
 
-      // Installments
+      // Installments (same as forecast)
       for (const inst of installments) {
         if (inst.dueDay === d && inst.remainingInstallments > monthOffset) {
           balance -= inst.amount
@@ -82,7 +85,15 @@ function calculateRunway(
         }
       }
 
-      // Daily variable living cost (future months only)
+      // Future variable expenses registered in DB (same as forecast — e.g. Aluguel on Jul 26)
+      for (const exp of futureVariableExpenses) {
+        if (toBrazilStr(new Date(exp.date)) === dayStr) {
+          balance -= exp.amount
+          const neg = checkNegative(year, month, d); if (neg) return neg
+        }
+      }
+
+      // Daily untracked living cost (future months only, if monthlyLivingCost is set)
       if (dailyVariable > 0) {
         balance -= dailyVariable
         const neg = checkNegative(year, month, d); if (neg) return neg
@@ -101,7 +112,7 @@ export async function GET() {
   const monthStart = startOfMonth(today)
   const monthEnd = endOfMonth(today)
 
-  const [balance, monthIncomes, recurringIncomes, fixedExpenses, variableExpenses, allTimeIncomes, caixinhaSpentAgg, installments, futureOneTimeIncomes] = await Promise.all([
+  const [balance, monthIncomes, recurringIncomes, fixedExpenses, variableExpenses, allTimeIncomes, caixinhaSpentAgg, installments, futureOneTimeIncomes, futureVariableExpenses] = await Promise.all([
     prisma.balance.findUnique({ where: { userId } }),
     prisma.income.findMany({
       where: { userId, recurring: false, date: { gte: monthStart, lte: monthEnd } },
@@ -121,6 +132,8 @@ export async function GET() {
     prisma.installment.findMany({ where: { userId, remainingInstallments: { gt: 0 } } }),
     // Future one-time incomes (not recurring, date > today) — needed for runway projection
     prisma.income.findMany({ where: { userId, recurring: false, date: { gt: today } } }),
+    // Future variable expenses registered in DB — mirrors what forecast shows for future days
+    prisma.variableExpense.findMany({ where: { userId, fromCaixinha: false, date: { gt: today } } }),
   ])
 
   const allIncomes = [...monthIncomes, ...recurringIncomes]
@@ -141,17 +154,16 @@ export async function GET() {
   const calendar = buildCalendarData(data, summary, today)
 
   const monthlyLivingCost = balance?.monthlyLivingCost ? Number(balance.monthlyLivingCost) : null
-  const runway = monthlyLivingCost
-    ? calculateRunway(
+  const runway = calculateRunway(
         summary.realCurrentBalance,
         monthlyLivingCost,
         recurringIncomes.map(i => ({ amount: Number(i.amount), date: i.date })),
         fixedExpenses.map(e => ({ amount: Number(e.amount), dueDay: e.dueDay, paid: e.paid })),
         installments.map(i => ({ amount: Number(i.amount), dueDay: i.dueDay, remainingInstallments: i.remainingInstallments })),
         futureOneTimeIncomes.map(i => ({ amount: Number(i.amount), date: i.date })),
+        futureVariableExpenses.map(e => ({ amount: Number(e.amount), date: e.date })),
         today,
       )
-    : null
 
   return NextResponse.json({
     summary,
