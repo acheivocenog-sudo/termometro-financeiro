@@ -24,11 +24,12 @@ model User {
 
 // Saldo atual (um por usuário, atualizado manualmente)
 model Balance {
-  id        String   @id @default(cuid())
-  userId    String   @unique
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  amount    Decimal  @db.Decimal(12, 2)
-  updatedAt DateTime @updatedAt
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount            Decimal  @db.Decimal(12, 2)
+  monthlyLivingCost Decimal? @db.Decimal(12, 2)
+  updatedAt         DateTime @updatedAt
 }
 
 // Receitas (salário, freelance, etc.)

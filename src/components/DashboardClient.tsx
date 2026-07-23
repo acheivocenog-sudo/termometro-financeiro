@@ -3,17 +3,26 @@
 import { useEffect, useState, useCallback } from 'react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { Plus, TrendingUp, ShoppingCart, Wallet, RefreshCw, Trash2 } from 'lucide-react'
+import { Plus, TrendingUp, ShoppingCart, Wallet, RefreshCw, Trash2, Heart } from 'lucide-react'
 import Thermometer from './Thermometer'
 import SummaryCards from './SummaryCards'
 import AddExpenseModal from './AddExpenseModal'
 import AddIncomeModal from './AddIncomeModal'
 import AddFixedExpenseModal from './AddFixedExpenseModal'
 import BalanceModal from './BalanceModal'
+import CustoDeVidaModal from './CustoDeVidaModal'
 import { FinancialSummary, formatCurrency } from '@/lib/finance'
+
+interface RunwayData {
+  date: string
+  shortfall: number
+  lastPaidDescription: string
+}
 
 interface DashboardData {
   summary: FinancialSummary
+  monthlyLivingCost: number | null
+  runway: RunwayData | null
   incomes: Array<{ id: string; description: string; amount: number; date: string; recurring: boolean }>
   fixedExpenses: Array<{ id: string; description: string; amount: number; dueDay: number; recurring: boolean; paid: boolean }>
   variableExpenses: Array<{ id: string; description: string; category: string; amount: number; date: string }>
@@ -35,7 +44,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 export default function DashboardClient() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
-  const [modal, setModal] = useState<'expense' | 'income' | 'fixed' | 'balance' | null>(null)
+  const [modal, setModal] = useState<'expense' | 'income' | 'fixed' | 'balance' | 'custo' | null>(null)
   const today = new Date()
 
   const fetchData = useCallback(async () => {
@@ -119,6 +128,50 @@ export default function DashboardClient() {
         <>
           {/* Summary cards */}
           <SummaryCards summary={summary} />
+
+          {/* Runway card */}
+          {(() => {
+            const runway = data?.runway
+            const mlc = data?.monthlyLivingCost
+            const runwayDate = runway ? new Date(runway.date) : null
+            const today2 = new Date()
+            const diffDays = runwayDate ? Math.floor((runwayDate.getTime() - today2.getTime()) / (1000 * 60 * 60 * 24)) : 0
+            const months = Math.floor(diffDays / 30)
+            const days = diffDays % 30
+            const dateStr = runwayDate ? runwayDate.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''
+
+            return (
+              <div
+                className="card border border-pink-500/20 mt-4 cursor-pointer hover:border-pink-500/40 transition-colors"
+                onClick={() => setModal('custo')}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Heart className="w-4 h-4 text-pink-400" />
+                    <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Vida Financeira</span>
+                  </div>
+                  {mlc && (
+                    <span className="text-xs text-gray-600">Custo: {formatCurrency(mlc)}/mês</span>
+                  )}
+                </div>
+
+                {!mlc ? (
+                  <p className="text-sm text-gray-500">
+                    Toque para configurar seu custo de vida mensal e ver até quando seu dinheiro dura.
+                  </p>
+                ) : runway ? (
+                  <>
+                    <p className="text-lg font-bold text-white mb-1">
+                      {runway.shortfall > 0
+                        ? `Dinheiro acaba em ${dateStr}`
+                        : `Runway: ${months}m ${days}d (até ${dateStr})`}
+                    </p>
+                    <p className="text-sm text-gray-400">{runway.lastPaidDescription}</p>
+                  </>
+                ) : null}
+              </div>
+            )
+          })()}
 
           {/* Main content grid */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
@@ -292,6 +345,12 @@ export default function DashboardClient() {
       <BalanceModal
         open={modal === 'balance'}
         currentBalance={summary?.currentBalance ?? 0}
+        onClose={() => setModal(null)}
+        onSaved={fetchData}
+      />
+      <CustoDeVidaModal
+        open={modal === 'custo'}
+        current={data?.monthlyLivingCost ?? null}
         onClose={() => setModal(null)}
         onSaved={fetchData}
       />
