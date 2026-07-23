@@ -21,8 +21,10 @@ interface RunwayData {
 interface DashboardData {
   summary: FinancialSummary
   runway: RunwayData | null
+  totalContasDoMes: number
   incomes: Array<{ id: string; description: string; amount: number; date: string; recurring: boolean }>
   fixedExpenses: Array<{ id: string; description: string; amount: number; dueDay: number; recurring: boolean; paid: boolean }>
+  installments: Array<{ id: string; description: string; amount: number; dueDay: number; remainingInstallments: number }>
   variableExpenses: Array<{ id: string; description: string; category: string; amount: number; date: string }>
 }
 
@@ -42,7 +44,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 export default function DashboardClient() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
-  const [modal, setModal] = useState<'expense' | 'income' | 'fixed' | 'balance' | null>(null)
+  const [modal, setModal] = useState<'expense' | 'income' | 'fixed' | 'balance' | 'contas' | null>(null)
   const today = new Date()
 
   const fetchData = useCallback(async () => {
@@ -125,7 +127,11 @@ export default function DashboardClient() {
       {summary && (
         <>
           {/* Summary cards */}
-          <SummaryCards summary={summary} />
+          <SummaryCards
+            summary={summary}
+            totalContasDoMes={data?.totalContasDoMes ?? 0}
+            onContasAPagarClick={() => setModal('contas')}
+          />
 
           {/* Runway card */}
           {(() => {
@@ -342,6 +348,57 @@ export default function DashboardClient() {
         onClose={() => setModal(null)}
         onSaved={fetchData}
       />
+
+      {/* Modal: Contas a Pagar */}
+      {modal === 'contas' && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="w-full max-w-md card animate-in slide-in-from-bottom-4 max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between mb-4 flex-shrink-0">
+              <h2 className="text-lg font-semibold text-white">Contas do Mês</h2>
+              <button onClick={() => setModal(null)} className="text-gray-500 hover:text-gray-300">
+                <Plus className="w-5 h-5 rotate-45" />
+              </button>
+            </div>
+            <div className="overflow-y-auto space-y-2 pr-1">
+              {(data?.fixedExpenses.length ?? 0) > 0 && (
+                <>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Despesas Fixas</p>
+                  {data?.fixedExpenses.map(e => (
+                    <div key={e.id} className="flex items-center justify-between p-2.5 rounded-xl bg-gray-800">
+                      <div>
+                        <p className={`text-sm font-medium ${e.paid ? 'line-through text-gray-500' : 'text-white'}`}>{e.description}</p>
+                        <p className="text-xs text-gray-500">Vence dia {e.dueDay} {e.paid ? '· Pago' : ''}</p>
+                      </div>
+                      <span className={`text-sm font-bold ${e.paid ? 'text-gray-600' : 'text-red-400'}`}>{formatCurrency(e.amount)}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+              {(data?.installments.length ?? 0) > 0 && (
+                <>
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mt-3 mb-1">Parcelas</p>
+                  {data?.installments.map(i => (
+                    <div key={i.id} className="flex items-center justify-between p-2.5 rounded-xl bg-gray-800">
+                      <div>
+                        <p className="text-sm font-medium text-white">{i.description}</p>
+                        <p className="text-xs text-gray-500">Vence dia {i.dueDay} · {i.remainingInstallments}x restantes</p>
+                      </div>
+                      <span className="text-sm font-bold text-red-400">{formatCurrency(i.amount)}</span>
+                    </div>
+                  ))}
+                </>
+              )}
+              {(data?.fixedExpenses.length ?? 0) === 0 && (data?.installments.length ?? 0) === 0 && (
+                <p className="text-sm text-gray-500 text-center py-6">Nenhuma conta cadastrada.</p>
+              )}
+              <div className="flex items-center justify-between p-2.5 rounded-xl bg-gray-700/50 mt-3">
+                <span className="text-sm font-semibold text-white">Total do mês</span>
+                <span className="text-sm font-bold text-red-400">{formatCurrency(data?.totalContasDoMes ?? 0)}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

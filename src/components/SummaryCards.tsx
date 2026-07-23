@@ -1,14 +1,17 @@
 'use client'
 
+import React from 'react'
 import { FinancialSummary, formatCurrency } from '@/lib/finance'
 import { Wallet, TrendingUp, TrendingDown, Calendar, DollarSign, Clock, PiggyBank } from 'lucide-react'
 
 interface SummaryCardsProps {
   summary: FinancialSummary
+  totalContasDoMes?: number
+  onContasAPagarClick?: () => void
 }
 
-export default function SummaryCards({ summary }: SummaryCardsProps) {
-  const cards = [
+export default function SummaryCards({ summary, totalContasDoMes, onContasAPagarClick }: SummaryCardsProps) {
+  const cards: Array<{ label: string; value: string; icon: React.ElementType; color: string; bg: string; border: string; subtitle: string; onClick?: () => void }> = [
     {
       label: 'Saldo Atual',
       value: formatCurrency(summary.realCurrentBalance),
@@ -29,12 +32,13 @@ export default function SummaryCards({ summary }: SummaryCardsProps) {
     },
     {
       label: 'Contas a Pagar',
-      value: formatCurrency(summary.futureExpensesTotal),
+      value: formatCurrency(totalContasDoMes ?? summary.futureExpensesTotal),
       icon: TrendingDown,
       color: 'text-red-400',
       bg: 'bg-red-500/10',
       border: 'border-red-500/20',
-      subtitle: 'Despesas fixas pendentes',
+      subtitle: 'Fixas + parcelas do mês',
+      onClick: onContasAPagarClick,
     },
     {
       label: 'Saldo Projetado',
@@ -77,7 +81,11 @@ export default function SummaryCards({ summary }: SummaryCardsProps) {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
       {cards.map(card => (
-        <div key={card.label} className={`card border ${card.border} flex flex-col gap-2`}>
+        <div
+          key={card.label}
+          onClick={card.onClick}
+          className={`card border ${card.border} flex flex-col gap-2 ${card.onClick ? 'cursor-pointer hover:brightness-110 transition-all active:scale-95' : ''}`}
+        >
           <div className="flex items-center justify-between">
             <span className="text-xs text-gray-500 font-medium uppercase tracking-wide">{card.label}</span>
             <div className={`${card.bg} rounded-lg p-1.5`}>
