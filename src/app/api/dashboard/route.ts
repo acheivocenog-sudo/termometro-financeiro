@@ -38,7 +38,7 @@ function calculateRunway(
     return null
   }
 
-  for (let monthOffset = 0; monthOffset < 36; monthOffset++) {
+  for (let monthOffset = 0; monthOffset < 24; monthOffset++) {
     const monthDate = addMonths(today, monthOffset)
     const year = monthDate.getFullYear()
     const month = monthDate.getMonth()
@@ -46,14 +46,6 @@ function calculateRunway(
     const isCurrentMonth = monthOffset === 0
     const startDay = isCurrentMonth ? todayDay + 1 : 1
 
-    // Daily variable from monthlyLivingCost — only for future months, only if configured.
-    // Represents daily spending not tracked as fixed bills (food, transport, etc.)
-    // Formula: (total monthly budget - known fixed bills) / days = untracked daily cost
-    const monthlyBills = fixedExpenses.reduce((s, e) => s + e.amount, 0)
-      + installments.filter(i => i.remainingInstallments > monthOffset).reduce((s, i) => s + i.amount, 0)
-    const dailyVariable = (!isCurrentMonth && monthlyLivingCost)
-      ? Math.max(0, monthlyLivingCost - monthlyBills) / daysInMonth
-      : 0
 
     for (let d = startDay; d <= daysInMonth; d++) {
       const dayStr = `${year}-${pad(month + 1)}-${pad(d)}`
@@ -93,15 +85,10 @@ function calculateRunway(
         }
       }
 
-      // Daily untracked living cost (future months only, if monthlyLivingCost is set)
-      if (dailyVariable > 0) {
-        balance -= dailyVariable
-        const neg = checkNegative(year, month, d); if (neg) return neg
-      }
     }
   }
 
-  return { date: addMonths(today, 36), shortfall: 0, lastPaidDescription: 'Mais de 3 anos de runway!' }
+  return { date: addMonths(today, 24), shortfall: 0, lastPaidDescription: 'Contas cobertas pelos próximos 2 anos!' }
 }
 
 export async function GET() {
@@ -153,10 +140,9 @@ export async function GET() {
   const summary = calculateFinancials(data, today)
   const calendar = buildCalendarData(data, summary, today)
 
-  const monthlyLivingCost = balance?.monthlyLivingCost ? Number(balance.monthlyLivingCost) : null
   const runway = calculateRunway(
         summary.realCurrentBalance,
-        monthlyLivingCost,
+        null,
         recurringIncomes.map(i => ({ amount: Number(i.amount), date: i.date })),
         fixedExpenses.map(e => ({ amount: Number(e.amount), dueDay: e.dueDay, paid: e.paid })),
         installments.map(i => ({ amount: Number(i.amount), dueDay: i.dueDay, remainingInstallments: i.remainingInstallments })),
@@ -167,7 +153,6 @@ export async function GET() {
 
   return NextResponse.json({
     summary,
-    monthlyLivingCost,
     runway,
     incomes: allIncomes.map(i => ({ ...i, amount: Number(i.amount) })),
     fixedExpenses: fixedExpenses.map(e => ({ ...e, amount: Number(e.amount) })),

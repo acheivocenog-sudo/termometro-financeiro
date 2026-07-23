@@ -10,7 +10,6 @@ import AddExpenseModal from './AddExpenseModal'
 import AddIncomeModal from './AddIncomeModal'
 import AddFixedExpenseModal from './AddFixedExpenseModal'
 import BalanceModal from './BalanceModal'
-import CustoDeVidaModal from './CustoDeVidaModal'
 import { FinancialSummary, formatCurrency } from '@/lib/finance'
 
 interface RunwayData {
@@ -21,7 +20,6 @@ interface RunwayData {
 
 interface DashboardData {
   summary: FinancialSummary
-  monthlyLivingCost: number | null
   runway: RunwayData | null
   incomes: Array<{ id: string; description: string; amount: number; date: string; recurring: boolean }>
   fixedExpenses: Array<{ id: string; description: string; amount: number; dueDay: number; recurring: boolean; paid: boolean }>
@@ -44,7 +42,7 @@ const CATEGORY_COLORS: Record<string, string> = {
 export default function DashboardClient() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
-  const [modal, setModal] = useState<'expense' | 'income' | 'fixed' | 'balance' | 'custo' | null>(null)
+  const [modal, setModal] = useState<'expense' | 'income' | 'fixed' | 'balance' | null>(null)
   const today = new Date()
 
   const fetchData = useCallback(async () => {
@@ -132,54 +130,39 @@ export default function DashboardClient() {
           {/* Runway card */}
           {(() => {
             const runway = data?.runway
-            const mlc = data?.monthlyLivingCost
             const runwayDate = runway ? new Date(runway.date) : null
-            const today2 = new Date()
-            const diffDays = runwayDate ? Math.floor((runwayDate.getTime() - today2.getTime()) / (1000 * 60 * 60 * 24)) : 0
-            const months = Math.floor(diffDays / 30)
-            const days = diffDays % 30
             const dateStr = runwayDate ? runwayDate.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : ''
+            const lastPaidDate = runwayDate ? new Date(runwayDate.getTime() - 86400000) : null
+            const lastPaidStr = lastPaidDate ? lastPaidDate.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'
 
             return (
-              <div
-                className="card border border-pink-500/20 mt-4 cursor-pointer hover:border-pink-500/40 transition-colors"
-                onClick={() => setModal('custo')}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <Heart className="w-4 h-4 text-pink-400" />
-                    <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Vida Financeira</span>
-                  </div>
-                  {mlc && (
-                    <span className="text-xs text-gray-600">Custo: {formatCurrency(mlc)}/mês</span>
-                  )}
+              <div className="card border border-pink-500/20 mt-4">
+                <div className="flex items-center mb-2">
+                  <Heart className="w-4 h-4 text-pink-400 mr-2" />
+                  <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">Vida Financeira</span>
                 </div>
 
-                {!mlc ? (
-                  <p className="text-sm text-gray-500">
-                    Toque para configurar seu custo de vida mensal e ver até quando suas contas estão cobertas.
-                  </p>
-                ) : runway ? (
-                  <>
-                    {runway.shortfall > 0 ? (
-                      <>
-                        <p className="text-lg font-bold text-white mb-1">
-                          Contas cobertas até {runwayDate ? new Date(runwayDate.getTime() - 86400000).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'}
-                        </p>
-                        <p className="text-sm text-gray-400">
-                          Em {dateStr} falta {formatCurrency(runway.shortfall)} para cobrir as contas
-                        </p>
-                      </>
-                    ) : (
-                      <>
-                        <p className="text-lg font-bold text-emerald-400 mb-1">
-                          Contas cobertas por mais de 3 anos
-                        </p>
-                        <p className="text-sm text-gray-400">{runway.lastPaidDescription}</p>
-                      </>
-                    )}
-                  </>
-                ) : null}
+                {runway ? (
+                  runway.shortfall > 0 ? (
+                    <>
+                      <p className="text-lg font-bold text-white mb-1">
+                        Contas cobertas até {lastPaidStr}
+                      </p>
+                      <p className="text-sm text-gray-400">
+                        Em {dateStr} falta {formatCurrency(runway.shortfall)} para cobrir as contas
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-lg font-bold text-emerald-400 mb-1">
+                        Contas cobertas pelos próximos 2 anos
+                      </p>
+                      <p className="text-sm text-gray-400">{runway.lastPaidDescription}</p>
+                    </>
+                  )
+                ) : (
+                  <p className="text-sm text-gray-500">Calculando projeção...</p>
+                )}
               </div>
             )
           })()}
@@ -356,12 +339,6 @@ export default function DashboardClient() {
       <BalanceModal
         open={modal === 'balance'}
         currentBalance={summary?.currentBalance ?? 0}
-        onClose={() => setModal(null)}
-        onSaved={fetchData}
-      />
-      <CustoDeVidaModal
-        open={modal === 'custo'}
-        current={data?.monthlyLivingCost ?? null}
         onClose={() => setModal(null)}
         onSaved={fetchData}
       />
