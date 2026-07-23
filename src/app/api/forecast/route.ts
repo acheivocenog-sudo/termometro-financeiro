@@ -139,8 +139,8 @@ export async function GET(req: Request) {
         amount: Number(i.amount), type: 'installment' as const,
       }))
 
-    // ── Variable expenses (only past / today — future is unpredictable) ──
-    const dayVariable = isFutureDay ? [] : allTargetVariables
+    // ── Variable expenses: past/today = actual; future = explicitly registered by user ──
+    const dayVariable = allTargetVariables
       .filter(e => toBrazilDateStr(new Date(e.date)) === dayStr)
       .map(e => ({
         description: e.description, amount: Number(e.amount),
