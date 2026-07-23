@@ -13,7 +13,7 @@ export async function GET() {
   const monthStart = startOfMonth(today)
   const monthEnd = endOfMonth(today)
 
-  const [balance, monthIncomes, recurringIncomes, fixedExpenses, variableExpenses] = await Promise.all([
+  const [balance, monthIncomes, recurringIncomes, fixedExpenses, variableExpenses, allTimeIncomes] = await Promise.all([
     prisma.balance.findUnique({ where: { userId } }),
     prisma.income.findMany({
       where: { userId, recurring: false, date: { gte: monthStart, lte: monthEnd } },
@@ -28,9 +28,11 @@ export async function GET() {
       where: { userId, date: { gte: monthStart, lte: monthEnd } },
       orderBy: { date: 'desc' },
     }),
+    prisma.income.aggregate({ where: { userId }, _sum: { amount: true } }),
   ])
 
   const allIncomes = [...monthIncomes, ...recurringIncomes]
+  const allIncomesTotal = Number(allTimeIncomes._sum.amount ?? 0)
 
   const data = {
     currentBalance: Number(balance?.amount ?? 0),
@@ -38,6 +40,7 @@ export async function GET() {
     futureFixedExpenses: fixedExpenses.map(e => ({ ...e, amount: Number(e.amount) })),
     todayVariableExpenses: variableExpenses.map(e => ({ ...e, amount: Number(e.amount) })),
     allVariableExpenses: variableExpenses.map(e => ({ ...e, amount: Number(e.amount) })),
+    allIncomesTotal,
   }
 
   const summary = calculateFinancials(data, today)

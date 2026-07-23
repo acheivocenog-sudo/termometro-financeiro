@@ -1,7 +1,7 @@
 'use client'
 
 import { FinancialSummary, formatCurrency } from '@/lib/finance'
-import { Wallet, TrendingUp, TrendingDown, Calendar, DollarSign, Clock } from 'lucide-react'
+import { Wallet, TrendingUp, TrendingDown, Calendar, DollarSign, Clock, PiggyBank } from 'lucide-react'
 
 interface SummaryCardsProps {
   summary: FinancialSummary
@@ -62,6 +62,15 @@ export default function SummaryCards({ summary }: SummaryCardsProps) {
       bg: 'bg-purple-500/10',
       border: 'border-purple-500/20',
       subtitle: 'Total gasto no mês',
+    },
+    {
+      label: 'Caixinha 10%',
+      value: formatCurrency(summary.caixinha),
+      icon: PiggyBank,
+      color: 'text-yellow-400',
+      bg: 'bg-yellow-500/10',
+      border: 'border-yellow-500/20',
+      subtitle: '10% de todas as receitas',
     },
   ]
 

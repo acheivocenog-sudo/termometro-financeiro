@@ -6,6 +6,7 @@ export interface FinancialData {
   futureFixedExpenses: Array<{ id: string; description: string; amount: number; dueDay: number; paid: boolean }>
   todayVariableExpenses: Array<{ id: string; description: string; category: string; amount: number; date: Date }>
   allVariableExpenses: Array<{ id: string; description: string; category: string; amount: number; date: Date }>
+  allIncomesTotal?: number
 }
 
 export interface FinancialSummary {
@@ -20,6 +21,7 @@ export interface FinancialSummary {
   todaySpent: number
   thermometerStatus: 'green' | 'yellow' | 'red' | 'dark-red'
   thermometerPercentage: number
+  caixinha: number
 }
 
 export function calculateFinancials(data: FinancialData, referenceDate: Date = new Date()): FinancialSummary {
@@ -88,6 +90,8 @@ export function calculateFinancials(data: FinancialData, referenceDate: Date = n
     }
   }
 
+  const caixinha = (data.allIncomesTotal ?? 0) * 0.10
+
   return {
     currentBalance: data.currentBalance,
     futureIncomesTotal,
@@ -100,6 +104,7 @@ export function calculateFinancials(data: FinancialData, referenceDate: Date = n
     todaySpent,
     thermometerStatus,
     thermometerPercentage,
+    caixinha,
   }
 }
 
