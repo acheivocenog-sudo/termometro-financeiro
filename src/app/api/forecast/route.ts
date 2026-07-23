@@ -49,7 +49,8 @@ export async function GET(req: Request) {
     // Exclude caixinha expenses from general balance
     prisma.variableExpense.findMany({ where: { userId, fromCaixinha: false, date: { gte: currentStart, lte: currentEnd } } }),
     isCurrentMonth ? Promise.resolve([]) : prisma.variableExpense.findMany({ where: { userId, fromCaixinha: false, date: { gte: targetStart, lte: targetEnd } } }),
-    prisma.income.aggregate({ where: { userId }, _sum: { amount: true } }),
+    // Only count incomes already received (recurring always count; non-recurring only up to today)
+    prisma.income.aggregate({ where: { userId, OR: [{ recurring: true }, { date: { lt: new Date(todayYear, todayMonth, todayDay + 1) } }] }, _sum: { amount: true } }),
     prisma.variableExpense.aggregate({ where: { userId, fromCaixinha: true }, _sum: { amount: true } }),
   ])
 
@@ -171,9 +172,13 @@ export async function GET(req: Request) {
         type: 'variable' as const, category: e.category,
       }))
 
-    const entries = [...dayIncomes, ...dayFixed, ...dayInstallments, ...dayVariable]
+    // For future days: deduct 10% caixinha from each income as it arrives
+    const caixinha10pct = isFutureDay ? dayIncomes.reduce((s, e) => s + e.amount * 0.10, 0) : 0
+    const caixinhaEntries = caixinha10pct > 0 ? [{ description: 'Caixinha (10%)', amount: caixinha10pct, type: 'variable' as const, category: 'Caixinha' }] : []
+
+    const entries = [...dayIncomes, ...dayFixed, ...dayInstallments, ...dayVariable, ...caixinhaEntries]
     const totalIn = dayIncomes.reduce((s, e) => s + e.amount, 0)
-    const totalOut = [...dayFixed, ...dayInstallments, ...dayVariable].reduce((s, e) => s + e.amount, 0)
+    const totalOut = [...dayFixed, ...dayInstallments, ...dayVariable].reduce((s, e) => s + e.amount, 0) + caixinha10pct
 
     runningBalance = runningBalance + totalIn - totalOut
 

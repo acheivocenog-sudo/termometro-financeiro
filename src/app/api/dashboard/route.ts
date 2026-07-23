@@ -126,7 +126,7 @@ export async function GET() {
       where: { userId, date: { gte: monthStart, lte: monthEnd } },
       orderBy: { date: 'desc' },
     }),
-    prisma.income.aggregate({ where: { userId }, _sum: { amount: true } }),
+    prisma.income.aggregate({ where: { userId, OR: [{ recurring: true }, { date: { lte: today } }] }, _sum: { amount: true } }),
     prisma.variableExpense.aggregate({ where: { userId, fromCaixinha: true }, _sum: { amount: true } }),
     prisma.installment.findMany({ where: { userId, remainingInstallments: { gt: 0 } } }),
   ])
