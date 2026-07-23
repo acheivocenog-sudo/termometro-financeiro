@@ -157,16 +157,27 @@ export default function DashboardClient() {
 
                 {!mlc ? (
                   <p className="text-sm text-gray-500">
-                    Toque para configurar seu custo de vida mensal e ver até quando seu dinheiro dura.
+                    Toque para configurar seu custo de vida mensal e ver até quando suas contas estão cobertas.
                   </p>
                 ) : runway ? (
                   <>
-                    <p className="text-lg font-bold text-white mb-1">
-                      {runway.shortfall > 0
-                        ? `Dinheiro acaba em ${dateStr}`
-                        : `Runway: ${months}m ${days}d (até ${dateStr})`}
-                    </p>
-                    <p className="text-sm text-gray-400">{runway.lastPaidDescription}</p>
+                    {runway.shortfall > 0 ? (
+                      <>
+                        <p className="text-lg font-bold text-white mb-1">
+                          Contas cobertas até {runwayDate ? new Date(runwayDate.getTime() - 86400000).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—'}
+                        </p>
+                        <p className="text-sm text-gray-400">
+                          Em {dateStr} falta {formatCurrency(runway.shortfall)} para cobrir as contas
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <p className="text-lg font-bold text-emerald-400 mb-1">
+                          Contas cobertas por mais de 3 anos
+                        </p>
+                        <p className="text-sm text-gray-400">{runway.lastPaidDescription}</p>
+                      </>
+                    )}
                   </>
                 ) : null}
               </div>

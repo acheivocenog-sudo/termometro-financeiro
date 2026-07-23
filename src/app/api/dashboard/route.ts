@@ -45,16 +45,12 @@ function calculateRunway(
     const isCurrentMonth = monthOffset === 0
     const startDay = isCurrentMonth ? todayDay + 1 : 1
 
-    // Bills known for this month (used to compute daily variable = remaining after bills)
-    const monthlyBills = (isCurrentMonth
-      ? fixedExpenses.filter(e => !e.paid)
-      : fixedExpenses
-    ).reduce((s, e) => s + e.amount, 0)
+    // Daily variable living cost = total monthly cost minus known fixed bills.
+    // Only applied in FUTURE months — remaining current-month days use only known events
+    // because realCurrentBalance already captures this month's actual spending pattern.
+    const monthlyBills = fixedExpenses.reduce((s, e) => s + e.amount, 0)
       + installments.filter(i => i.remainingInstallments > monthOffset).reduce((s, i) => s + i.amount, 0)
-
-    // Daily variable = what's left of living cost after known bills, spread evenly.
-    // Income is NOT subtracted here — it's added explicitly in the day loop below.
-    const dailyVariable = Math.max(0, monthlyLivingCost - monthlyBills) / daysInMonth
+    const dailyVariable = isCurrentMonth ? 0 : Math.max(0, monthlyLivingCost - monthlyBills) / daysInMonth
 
     for (let d = startDay; d <= daysInMonth; d++) {
       const dayStr = `${year}-${pad(month + 1)}-${pad(d)}`
@@ -86,9 +82,11 @@ function calculateRunway(
         }
       }
 
-      // Daily variable living cost spread evenly across the month
-      balance -= dailyVariable
-      const neg = checkNegative(year, month, d); if (neg) return neg
+      // Daily variable living cost (future months only)
+      if (dailyVariable > 0) {
+        balance -= dailyVariable
+        const neg = checkNegative(year, month, d); if (neg) return neg
+      }
     }
   }
 
