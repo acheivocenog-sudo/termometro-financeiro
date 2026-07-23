@@ -13,9 +13,13 @@ function calculateRunway(
   recurringIncomes: { amount: number; date: Date }[],
   fixedExpenses: { amount: number; dueDay: number; paid: boolean }[],
   installments: { amount: number; dueDay: number; remainingInstallments: number }[],
+  futureOneTimeIncomes: { amount: number; date: Date }[],
   startDate: Date,
 ) {
   if (monthlyLivingCost <= 0) return null
+
+  const toBrazilStr = (d: Date) => new Date(d.getTime() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const pad = (n: number) => String(n).padStart(2, '0')
 
   let balance = realBalance
   const today = new Date(startDate)
@@ -41,62 +45,50 @@ function calculateRunway(
     const isCurrentMonth = monthOffset === 0
     const startDay = isCurrentMonth ? todayDay + 1 : 1
 
-    if (isCurrentMonth) {
-      // Current month: realCurrentBalance already reflects this month's spending.
-      // Only apply UNPAID fixed expenses and installments still due this month,
-      // plus recurring incomes not yet received. No daily variable cost.
-      for (let d = startDay; d <= daysInMonth; d++) {
-        // Recurring incomes
-        for (const inc of recurringIncomes) {
-          if (new Date(inc.date).getDate() === d) balance += inc.amount
-        }
-        // Only UNPAID fixed expenses
-        for (const exp of fixedExpenses) {
-          if (exp.dueDay === d && !exp.paid) {
-            balance -= exp.amount
-            const neg = checkNegative(year, month, d); if (neg) return neg
-          }
-        }
-        // Installments (offset 0 = this month)
-        for (const inst of installments) {
-          if (inst.dueDay === d) {
-            balance -= inst.amount
-            const neg = checkNegative(year, month, d); if (neg) return neg
-          }
-        }
-      }
-    } else {
-      // Future months: full monthly living cost spread daily, plus precise bill dates
-      const monthlyFixed = fixedExpenses.reduce((s, e) => s + e.amount, 0)
-      const monthlyInst = installments
-        .filter(i => i.remainingInstallments > monthOffset)
-        .reduce((s, i) => s + i.amount, 0)
-      const monthlyRec = recurringIncomes.reduce((s, i) => s + i.amount, 0)
-      const netDailyVariable = Math.max(0, monthlyLivingCost - monthlyFixed - monthlyInst - monthlyRec) / daysInMonth
+    // Bills known for this month (used to compute daily variable = remaining after bills)
+    const monthlyBills = (isCurrentMonth
+      ? fixedExpenses.filter(e => !e.paid)
+      : fixedExpenses
+    ).reduce((s, e) => s + e.amount, 0)
+      + installments.filter(i => i.remainingInstallments > monthOffset).reduce((s, i) => s + i.amount, 0)
 
-      for (let d = 1; d <= daysInMonth; d++) {
-        // Recurring incomes
-        for (const inc of recurringIncomes) {
-          if (new Date(inc.date).getDate() === d) balance += inc.amount
-        }
-        // Fixed expenses
-        for (const exp of fixedExpenses) {
-          if (exp.dueDay === d) {
-            balance -= exp.amount
-            const neg = checkNegative(year, month, d); if (neg) return neg
-          }
-        }
-        // Installments
-        for (const inst of installments) {
-          if (inst.dueDay === d && inst.remainingInstallments > monthOffset) {
-            balance -= inst.amount
-            const neg = checkNegative(year, month, d); if (neg) return neg
-          }
-        }
-        // Daily variable living cost
-        balance -= netDailyVariable
-        const neg = checkNegative(year, month, d); if (neg) return neg
+    // Daily variable = what's left of living cost after known bills, spread evenly.
+    // Income is NOT subtracted here — it's added explicitly in the day loop below.
+    const dailyVariable = Math.max(0, monthlyLivingCost - monthlyBills) / daysInMonth
+
+    for (let d = startDay; d <= daysInMonth; d++) {
+      const dayStr = `${year}-${pad(month + 1)}-${pad(d)}`
+
+      // Recurring incomes (on their scheduled day of month)
+      for (const inc of recurringIncomes) {
+        if (new Date(inc.date).getDate() === d) balance += inc.amount
       }
+
+      // One-time future incomes (e.g., a bonus scheduled for a specific date)
+      for (const inc of futureOneTimeIncomes) {
+        if (toBrazilStr(new Date(inc.date)) === dayStr) balance += inc.amount
+      }
+
+      // Fixed expenses (current month: only unpaid; future months: all)
+      for (const exp of fixedExpenses) {
+        if (exp.dueDay === d) {
+          if (isCurrentMonth && exp.paid) continue
+          balance -= exp.amount
+          const neg = checkNegative(year, month, d); if (neg) return neg
+        }
+      }
+
+      // Installments
+      for (const inst of installments) {
+        if (inst.dueDay === d && inst.remainingInstallments > monthOffset) {
+          balance -= inst.amount
+          const neg = checkNegative(year, month, d); if (neg) return neg
+        }
+      }
+
+      // Daily variable living cost spread evenly across the month
+      balance -= dailyVariable
+      const neg = checkNegative(year, month, d); if (neg) return neg
     }
   }
 
@@ -111,7 +103,7 @@ export async function GET() {
   const monthStart = startOfMonth(today)
   const monthEnd = endOfMonth(today)
 
-  const [balance, monthIncomes, recurringIncomes, fixedExpenses, variableExpenses, allTimeIncomes, caixinhaSpentAgg, installments] = await Promise.all([
+  const [balance, monthIncomes, recurringIncomes, fixedExpenses, variableExpenses, allTimeIncomes, caixinhaSpentAgg, installments, futureOneTimeIncomes] = await Promise.all([
     prisma.balance.findUnique({ where: { userId } }),
     prisma.income.findMany({
       where: { userId, recurring: false, date: { gte: monthStart, lte: monthEnd } },
@@ -129,6 +121,8 @@ export async function GET() {
     prisma.income.aggregate({ where: { userId, OR: [{ recurring: true }, { date: { lte: today } }] }, _sum: { amount: true } }),
     prisma.variableExpense.aggregate({ where: { userId, fromCaixinha: true }, _sum: { amount: true } }),
     prisma.installment.findMany({ where: { userId, remainingInstallments: { gt: 0 } } }),
+    // Future one-time incomes (not recurring, date > today) — needed for runway projection
+    prisma.income.findMany({ where: { userId, recurring: false, date: { gt: today } } }),
   ])
 
   const allIncomes = [...monthIncomes, ...recurringIncomes]
@@ -156,6 +150,7 @@ export async function GET() {
         recurringIncomes.map(i => ({ amount: Number(i.amount), date: i.date })),
         fixedExpenses.map(e => ({ amount: Number(e.amount), dueDay: e.dueDay, paid: e.paid })),
         installments.map(i => ({ amount: Number(i.amount), dueDay: i.dueDay, remainingInstallments: i.remainingInstallments })),
+        futureOneTimeIncomes.map(i => ({ amount: Number(i.amount), date: i.date })),
         today,
       )
     : null
