@@ -151,17 +151,11 @@ export async function GET() {
         today,
       )
 
-  const totalContasDoMes =
-    fixedExpenses.reduce((s, e) => s + Number(e.amount), 0) +
-    installments.reduce((s, i) => s + Number(i.amount), 0)
-
   return NextResponse.json({
     summary,
     runway,
-    totalContasDoMes,
     incomes: allIncomes.map(i => ({ ...i, amount: Number(i.amount) })),
     fixedExpenses: fixedExpenses.map(e => ({ ...e, amount: Number(e.amount) })),
-    installments: installments.map(i => ({ ...i, amount: Number(i.amount) })),
     variableExpenses: variableExpenses.map(e => ({ ...e, amount: Number(e.amount) })),
     calendar,
   })
