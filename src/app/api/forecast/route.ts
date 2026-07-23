@@ -38,20 +38,28 @@ export async function GET(req: Request) {
   const targetEnd = endOfMonth(new Date(targetYear, targetMonth))
 
   const [balance, recurringIncomes, currentMonthIncomes, targetMonthIncomes,
-    fixedExpenses, installments, currentVariableExpenses, targetVariableExpenses] = await Promise.all([
+    fixedExpenses, installments, currentVariableExpenses, targetVariableExpenses,
+    allTimeIncomes, caixinhaSpentAgg] = await Promise.all([
     prisma.balance.findUnique({ where: { userId } }),
     prisma.income.findMany({ where: { userId, recurring: true } }),
     prisma.income.findMany({ where: { userId, recurring: false, date: { gte: currentStart, lte: currentEnd } } }),
     isCurrentMonth ? Promise.resolve([]) : prisma.income.findMany({ where: { userId, recurring: false, date: { gte: targetStart, lte: targetEnd } } }),
     prisma.fixedExpense.findMany({ where: { userId } }),
     prisma.installment.findMany({ where: { userId, remainingInstallments: { gt: 0 } } }),
-    prisma.variableExpense.findMany({ where: { userId, date: { gte: currentStart, lte: currentEnd } } }),
-    isCurrentMonth ? Promise.resolve([]) : prisma.variableExpense.findMany({ where: { userId, date: { gte: targetStart, lte: targetEnd } } }),
+    // Exclude caixinha expenses from general balance
+    prisma.variableExpense.findMany({ where: { userId, fromCaixinha: false, date: { gte: currentStart, lte: currentEnd } } }),
+    isCurrentMonth ? Promise.resolve([]) : prisma.variableExpense.findMany({ where: { userId, fromCaixinha: false, date: { gte: targetStart, lte: targetEnd } } }),
+    prisma.income.aggregate({ where: { userId }, _sum: { amount: true } }),
+    prisma.variableExpense.aggregate({ where: { userId, fromCaixinha: true }, _sum: { amount: true } }),
   ])
 
   // currentBalance = the balance the user manually set (treated as month-start anchor).
-  // We project forward from there, applying actual recorded transactions day by day.
-  const currentBalance = Number(balance?.amount ?? 0)
+  // Deduct caixinha (10% of all incomes minus what was spent from it) from the start.
+  const rawBalance = Number(balance?.amount ?? 0)
+  const totalIncomesEver = Number(allTimeIncomes._sum.amount ?? 0)
+  const caixinhaSpent = Number(caixinhaSpentAgg._sum.amount ?? 0)
+  const caixinhaNet = totalIncomesEver * 0.10 - caixinhaSpent
+  const currentBalance = rawBalance - caixinhaNet
   const monthStartBalance = currentBalance
 
   // ─── PROJECT START BALANCE FOR FUTURE MONTHS ────────────────────────────────

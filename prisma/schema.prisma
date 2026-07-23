@@ -83,15 +83,16 @@ model Installment {
 
 // Despesas variáveis (gastos do dia a dia)
 model VariableExpense {
-  id          String   @id @default(cuid())
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  description String
-  category    String   @default("Outros")
-  amount      Decimal  @db.Decimal(12, 2)
-  date        DateTime
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  description  String
+  category     String   @default("Outros")
+  amount       Decimal  @db.Decimal(12, 2)
+  date         DateTime
+  fromCaixinha Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   @@index([userId])
   @@index([date])

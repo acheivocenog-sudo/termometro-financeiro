@@ -9,6 +9,7 @@ const schema = z.object({
   category: z.string().default('Outros'),
   amount: z.number().positive(),
   date: z.string(),
+  fromCaixinha: z.boolean().default(false),
 })
 
 export async function GET() {

@@ -4,9 +4,10 @@ export interface FinancialData {
   currentBalance: number
   futureIncomes: Array<{ id: string; description: string; amount: number; date: Date }>
   futureFixedExpenses: Array<{ id: string; description: string; amount: number; dueDay: number; paid: boolean }>
-  todayVariableExpenses: Array<{ id: string; description: string; category: string; amount: number; date: Date }>
-  allVariableExpenses: Array<{ id: string; description: string; category: string; amount: number; date: Date }>
+  todayVariableExpenses: Array<{ id: string; description: string; category: string; amount: number; date: Date; fromCaixinha: boolean }>
+  allVariableExpenses: Array<{ id: string; description: string; category: string; amount: number; date: Date; fromCaixinha: boolean }>
   allIncomesTotal?: number
+  caixinhaSpent?: number
 }
 
 export interface FinancialSummary {
@@ -44,21 +45,22 @@ export function calculateFinancials(data: FinancialData, referenceDate: Date = n
   // Todas as despesas fixas do mês (pagas + a pagar)
   const futureExpensesTotal = data.futureFixedExpenses.reduce((sum, e) => sum + e.amount, 0)
 
-  // Total de despesas variáveis já realizadas neste mês
+  // Despesas variáveis do mês — excluindo as da caixinha (pool separado)
   const variableExpensesTotalThisMonth = data.allVariableExpenses
     .filter(e => {
+      if (e.fromCaixinha) return false
       const d = new Date(e.date)
       return !isBefore(d, startOfThisMonth) && !isAfter(d, endOfThisMonth)
     })
     .reduce((sum, e) => sum + e.amount, 0)
 
-  const caixinha = (data.allIncomesTotal ?? 0) * 0.10
+  const caixinha = (data.allIncomesTotal ?? 0) * 0.10 - (data.caixinhaSpent ?? 0)
 
   // Saldo disponível = Saldo Atual + Receitas do Mês - Despesas Fixas
   const availableBalance = data.currentBalance + futureIncomesTotal - futureExpensesTotal
 
-  // Saldo projetado = disponível - gastos variáveis - caixinha
-  const projectedBalance = availableBalance - variableExpensesTotalThisMonth - caixinha
+  // Saldo projetado = disponível - gastos variáveis - caixinha bruta (10% das receitas)
+  const projectedBalance = availableBalance - variableExpensesTotalThisMonth - (data.allIncomesTotal ?? 0) * 0.10
 
   // Orçamento diário = saldo projetado / dias restantes
   const dailyBudget = daysRemaining > 0 ? projectedBalance / daysRemaining : projectedBalance
@@ -98,13 +100,18 @@ export function calculateFinancials(data: FinancialData, referenceDate: Date = n
     .filter(i => toLocalDateStr(new Date(i.date)) <= todayStr)
     .reduce((sum, i) => sum + i.amount, 0)
 
+  // Gastos variáveis até hoje (excluindo futuros e excluindo os da caixinha)
+  const variableExpensesToday = data.allVariableExpenses
+    .filter(e => !e.fromCaixinha && toLocalDateStr(new Date(e.date)) <= todayStr)
+    .reduce((sum, e) => sum + e.amount, 0)
+
   // Fixas já pagas (saíram da conta)
   const paidFixedTotal = data.futureFixedExpenses
     .filter(e => e.paid)
     .reduce((sum, e) => sum + e.amount, 0)
 
-  // Saldo real agora = inicial + recebido - gasto variável - fixas pagas - caixinha
-  const realCurrentBalance = data.currentBalance + receivedIncomesTotal - variableExpensesTotalThisMonth - paidFixedTotal - caixinha
+  // Saldo real agora = inicial + recebido até hoje - gastos até hoje - fixas pagas - caixinha bruta
+  const realCurrentBalance = data.currentBalance + receivedIncomesTotal - variableExpensesToday - paidFixedTotal - (data.allIncomesTotal ?? 0) * 0.10
 
   return {
     currentBalance: data.currentBalance,

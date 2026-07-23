@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { X, Plus } from 'lucide-react'
+import { X, Plus, PiggyBank } from 'lucide-react'
 import { format } from 'date-fns'
 
 interface AddExpenseModalProps {
@@ -21,6 +21,7 @@ export default function AddExpenseModal({ open, onClose, onSaved }: AddExpenseMo
     category: 'Outros',
     amount: '',
     date: format(new Date(), 'yyyy-MM-dd'),
+    fromCaixinha: false,
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -50,7 +51,7 @@ export default function AddExpenseModal({ open, onClose, onSaved }: AddExpenseMo
       return
     }
 
-    setForm({ description: '', category: 'Outros', amount: '', date: format(new Date(), 'yyyy-MM-dd') })
+    setForm({ description: '', category: 'Outros', amount: '', date: format(new Date(), 'yyyy-MM-dd'), fromCaixinha: false })
     onSaved()
     onClose()
   }
@@ -116,6 +117,28 @@ export default function AddExpenseModal({ open, onClose, onSaved }: AddExpenseMo
               ))}
             </select>
           </div>
+
+          {/* Toggle Caixinha */}
+          <button
+            type="button"
+            onClick={() => setForm(f => ({ ...f, fromCaixinha: !f.fromCaixinha }))}
+            className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-colors ${
+              form.fromCaixinha
+                ? 'bg-yellow-500/15 border-yellow-500/40 text-yellow-400'
+                : 'bg-gray-800/50 border-gray-700 text-gray-500 hover:border-gray-600'
+            }`}
+          >
+            <PiggyBank className="w-4 h-4 flex-shrink-0" />
+            <div className="text-left flex-1">
+              <p className="text-sm font-medium">Pagar com Caixinha</p>
+              <p className="text-xs opacity-70">Desconta da caixinha, não do saldo geral</p>
+            </div>
+            <div className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 ${
+              form.fromCaixinha ? 'bg-yellow-500 border-yellow-500' : 'border-gray-600'
+            }`}>
+              {form.fromCaixinha && <span className="text-white text-[10px] font-bold">✓</span>}
+            </div>
+          </button>
 
           {error && <p className="text-red-400 text-sm">{error}</p>}
 
