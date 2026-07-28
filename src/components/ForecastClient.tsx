@@ -94,12 +94,19 @@ export default function ForecastClient() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white">Previsão Financeira</h1>
-          {data && (
-            <p className="text-zinc-400 text-sm mt-1">
-              Saldo inicial do mês: <span className="text-green-400 font-semibold">{formatCurrency(data.currentBalance)}</span>
-              {data.isFuture && <span className="ml-2 text-zinc-500 text-xs">(projetado)</span>}
-            </p>
-          )}
+          {data && (() => {
+            const todayRow = data.days.find((d: any) => d.isToday)
+            const displayBalance = todayRow ? todayRow.balance : data.days[data.days.length - 1]?.balance
+            return (
+              <p className="text-zinc-400 text-sm mt-1">
+                {data.isCurrentMonth ? 'Saldo atual:' : 'Saldo projetado do mês:'}{' '}
+                <span className={`font-semibold ${displayBalance >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                  {formatCurrency(displayBalance)}
+                </span>
+                {data.isFuture && <span className="ml-2 text-zinc-500 text-xs">(projetado)</span>}
+              </p>
+            )
+          })()}
         </div>
       </div>
 
