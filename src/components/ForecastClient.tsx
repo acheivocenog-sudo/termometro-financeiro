@@ -74,15 +74,25 @@ export default function ForecastClient() {
   const [loading, setLoading] = useState(true)
   const [expandedDay, setExpandedDay] = useState<number | null>(null)
 
-  useEffect(() => {
+  const fetchForecast = (date: Date) => {
     setLoading(true)
     setExpandedDay(null)
-    const month = viewDate.getMonth() + 1
-    const year = viewDate.getFullYear()
+    const month = date.getMonth() + 1
+    const year = date.getFullYear()
     fetch(`/api/forecast?month=${month}&year=${year}`)
       .then(r => r.json())
       .then(d => { setData(d); setLoading(false) })
       .catch(() => setLoading(false))
+  }
+
+  useEffect(() => { fetchForecast(viewDate) }, [viewDate])
+
+  // Re-fetch when user returns to this tab/page (catches expenses added elsewhere)
+  useEffect(() => {
+    const onFocus = () => fetchForecast(viewDate)
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) fetchForecast(viewDate) })
+    return () => { window.removeEventListener('focus', onFocus) }
   }, [viewDate])
 
   const canGoBack = viewDate.getMonth() === today.getMonth() && viewDate.getFullYear() === today.getFullYear()
