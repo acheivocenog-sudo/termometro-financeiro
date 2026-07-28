@@ -55,12 +55,14 @@ export async function GET(req: Request) {
   ])
 
   // currentBalance = the balance the user manually set (treated as month-start anchor).
-  // Deduct caixinha (10% of all incomes minus what was spent from it) from the start.
+  // Deduct gross caixinha (10% of all incomes) — same as dashboard realCurrentBalance.
+  // Caixinha spending comes from the caixinha pool, not the main balance, so never subtract caixinhaSpent here.
   const rawBalance = Number(balance?.amount ?? 0)
   const totalIncomesEver = Number(allTimeIncomes._sum.amount ?? 0)
   const caixinhaSpent = Number(caixinhaSpentAgg._sum.amount ?? 0)
-  const caixinhaNet = totalIncomesEver * 0.10 - caixinhaSpent
-  const currentBalance = rawBalance - caixinhaNet
+  const caixinhaGross = totalIncomesEver * 0.10
+  const caixinhaNet = caixinhaGross - caixinhaSpent  // used only for future-month startingBalance
+  const currentBalance = rawBalance - caixinhaGross
   const monthStartBalance = currentBalance
 
   // ─── PROJECT START BALANCE FOR FUTURE MONTHS ────────────────────────────────
@@ -79,7 +81,7 @@ export async function GET(req: Request) {
       ...recurringIncomes.filter(i => new Date(i.date).getDate() <= todayDay),
     ].reduce((s, i) => s + Number(i.amount), 0)
     const paidFixed = fixedExpenses.filter(e => e.paid).reduce((s, e) => s + Number(e.amount), 0)
-    startingBalance = rawBalance + incomesReceivedToDate - variableSpentToDate - paidFixed - caixinhaNet
+    startingBalance = rawBalance + incomesReceivedToDate - variableSpentToDate - paidFixed - caixinhaGross
 
     // Step 2: apply remaining current month days (tomorrow → end of current month)
     const daysInCurrent = getDaysInMonth(todayLocal)
