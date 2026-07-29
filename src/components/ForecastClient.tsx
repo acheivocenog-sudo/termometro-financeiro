@@ -106,7 +106,8 @@ export default function ForecastClient() {
           <h1 className="text-2xl font-bold text-white">Previsão Financeira</h1>
           {data && (() => {
             const todayRow = data.days.find((d: any) => d.isToday)
-            const displayBalance = todayRow ? todayRow.balance : data.days[data.days.length - 1]?.balance
+            const raw = todayRow ? todayRow.balance : data.days[data.days.length - 1]?.balance
+            const displayBalance: number = raw ?? 0
             return (
               <p className="text-zinc-400 text-sm mt-1">
                 {data.isCurrentMonth ? 'Saldo atual:' : 'Saldo projetado do mês:'}{' '}
