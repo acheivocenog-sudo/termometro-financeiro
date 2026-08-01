@@ -65,13 +65,53 @@ export async function GET(req: Request) {
   const currentBalance = rawBalance - caixinhaGross
   const monthStartBalance = currentBalance
 
-  // ─── PROJECT START BALANCE FOR FUTURE MONTHS ────────────────────────────────
-  // Current month keeps currentBalance as anchor (day-by-day loop replays all DB transactions).
-  // Future months start from realCurrentBalance (what user actually has today), then
-  // apply remaining current-month events, then simulate each intermediate month.
+  const isPastTarget = targetYear < todayYear || (targetYear === todayYear && targetMonth < todayMonth)
+
+  // ─── PROJECT START BALANCE ───────────────────────────────────────────────────
+  // Current month: replay all DB transactions from currentBalance anchor.
+  // Future months: forward-project from realCurrentBalance.
+  // Past months: back-calculate from realCurrentBalance by reversing the target month's transactions.
   let startingBalance = currentBalance
 
-  if (isFuture) {
+  if (isPastTarget) {
+    // realCurrentBalance = rawBalance + all received - all spent - paidFixed - caixinha
+    const allVariableSpent = currentVariableExpenses.reduce((s, e) => s + Number(e.amount), 0)
+    const allReceived = [
+      ...currentMonthIncomes,
+      ...recurringIncomes.filter(i => new Date(i.date).getDate() <= todayDay),
+    ].reduce((s, i) => s + Number(i.amount), 0)
+    const paidFixed = fixedExpenses.filter(e => e.paid).reduce((s, e) => s + Number(e.amount), 0)
+    const realCurrentBalance = rawBalance + allReceived - allVariableSpent - paidFixed - caixinhaGross
+
+    // Walk backward from realCurrentBalance to the start of the target month by
+    // reversing each month between target+1 and current.
+    let bal = realCurrentBalance
+    // First reverse the current month up to today
+    const curMonthIn = [
+      ...recurringIncomes.filter(i => new Date(i.date).getDate() <= todayDay),
+      ...currentMonthIncomes.filter(i => toBrazilDateStr(new Date(i.date)) <= todayBrazilStr),
+    ].reduce((s, i) => s + Number(i.amount), 0)
+    const curMonthOut = allVariableSpent + paidFixed
+    bal = bal - curMonthIn + curMonthOut
+
+    // Then reverse each intermediate full month (from current-1 down to target+1)
+    const monthsBack = (todayYear - targetYear) * 12 + (todayMonth - targetMonth)
+    for (let m = 1; m < monthsBack; m++) {
+      const mIdx = todayYear * 12 + todayMonth - m
+      const mYear = Math.floor(mIdx / 12)
+      const mMonth = mIdx % 12
+      // We don't have full historical data for intermediate months — approximate with recurring
+      const mIn = recurringIncomes.reduce((s, i) => s + Number(i.amount), 0)
+      const mOut = fixedExpenses.reduce((s, e) => s + Number(e.amount), 0)
+        + installments.filter(i => {
+            const instStartM = new Date(i.startDate).getFullYear() * 12 + new Date(i.startDate).getMonth()
+            const mFromStart = mYear * 12 + mMonth - instStartM
+            return mFromStart >= 0 && mFromStart < i.remainingInstallments
+          }).reduce((s, i) => s + Number(i.amount), 0)
+      bal = bal - mIn + mOut
+    }
+    startingBalance = bal
+  } else if (isFuture) {
     // Step 1: compute realCurrentBalance = what the user has right now
     const variableSpentToDate = currentVariableExpenses
       .filter(e => toBrazilDateStr(new Date(e.date)) <= todayBrazilStr)
@@ -137,8 +177,9 @@ export async function GET(req: Request) {
 
   for (let d = 1; d <= totalDays; d++) {
     const date = new Date(targetYear, targetMonth, d)
+    const isPastMonth = targetYear < todayYear || (targetYear === todayYear && targetMonth < todayMonth)
     const isToday = isCurrentMonth && d === todayDay
-    const isPast = isCurrentMonth && d < todayDay
+    const isPast = isPastMonth || (isCurrentMonth && d < todayDay)
     const isFutureDay = !isToday && !isPast
 
     // ── Incomes ──

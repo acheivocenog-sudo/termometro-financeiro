@@ -95,7 +95,7 @@ export default function ForecastClient() {
     return () => { window.removeEventListener('focus', onFocus) }
   }, [viewDate])
 
-  const canGoBack = viewDate.getMonth() === today.getMonth() && viewDate.getFullYear() === today.getFullYear()
+  const canGoBack = viewDate <= new Date(today.getFullYear(), today.getMonth() - 12, 1)
   const monthName = format(viewDate, 'MMMM yyyy', { locale: ptBR })
 
   return (
