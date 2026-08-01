@@ -56,15 +56,6 @@ export function calculateFinancials(data: FinancialData, referenceDate: Date = n
 
   const caixinha = (data.allIncomesTotal ?? 0) * 0.10 - (data.caixinhaSpent ?? 0)
 
-  // Saldo disponível = Saldo Atual + Receitas do Mês - Despesas Fixas
-  const availableBalance = data.currentBalance + futureIncomesTotal - futureExpensesTotal
-
-  // Saldo projetado = disponível - gastos variáveis - caixinha bruta (10% das receitas)
-  const projectedBalance = availableBalance - variableExpensesTotalThisMonth - (data.allIncomesTotal ?? 0) * 0.10
-
-  // Orçamento diário = saldo projetado / dias restantes
-  const dailyBudget = daysRemaining > 0 ? projectedBalance / daysRemaining : projectedBalance
-
   // Gastos de hoje (comparação em UTC-3 para evitar divergência de timezone)
   const toLocalDateStr = (d: Date) => {
     const brazil = new Date(d.getTime() - 3 * 60 * 60 * 1000)
@@ -74,6 +65,57 @@ export function calculateFinancials(data: FinancialData, referenceDate: Date = n
   const todaySpent = data.todayVariableExpenses
     .filter(e => toLocalDateStr(new Date(e.date)) === todayStr)
     .reduce((sum, e) => sum + e.amount, 0)
+
+  // Receitas já recebidas até hoje (date <= today, Brazil tz) — all-time when data includes history
+  const receivedIncomesTotal = data.futureIncomes
+    .filter(i => toLocalDateStr(new Date(i.date)) <= todayStr)
+    .reduce((sum, i) => sum + i.amount, 0)
+
+  // Gastos variáveis até hoje (excluindo futuros e excluindo os da caixinha) — all-time
+  const variableExpensesToday = data.allVariableExpenses
+    .filter(e => !e.fromCaixinha && toLocalDateStr(new Date(e.date)) <= todayStr)
+    .reduce((sum, e) => sum + e.amount, 0)
+
+  // Fixas já pagas (saíram da conta)
+  const paidFixedTotal = data.futureFixedExpenses
+    .filter(e => e.paid)
+    .reduce((sum, e) => sum + e.amount, 0)
+
+  // Saldo real agora = inicial + recebido (histórico todo) - gasto (histórico todo) - fixas pagas - caixinha bruta
+  const realCurrentBalance = data.currentBalance + receivedIncomesTotal - variableExpensesToday - paidFixedTotal - (data.allIncomesTotal ?? 0) * 0.10
+
+  // ── Projeção do fim do mês ────────────────────────────────────────────────────
+  // Parte do saldo real AGORA e adiciona apenas o que ainda vai acontecer no mês.
+  // Receitas futuras do mês (agendadas depois de hoje)
+  const futureMonthIncomes = data.futureIncomes
+    .filter(i => {
+      const d = new Date(i.date)
+      return !isBefore(d, startOfThisMonth) && !isAfter(d, endOfThisMonth) && toLocalDateStr(d) > todayStr
+    })
+    .reduce((sum, i) => sum + i.amount, 0)
+
+  // Gastos variáveis futuros do mês (raramente preenchidos, mas se existirem)
+  const futureMonthVariables = data.allVariableExpenses
+    .filter(e => {
+      if (e.fromCaixinha) return false
+      const dStr = toLocalDateStr(new Date(e.date))
+      return dStr > todayStr && !isBefore(new Date(e.date), startOfThisMonth) && !isAfter(new Date(e.date), endOfThisMonth)
+    })
+    .reduce((sum, e) => sum + e.amount, 0)
+
+  // Fixas ainda não pagas (vão sair da conta até o fim do mês)
+  const unpaidFixed = data.futureFixedExpenses
+    .filter(e => !e.paid)
+    .reduce((sum, e) => sum + e.amount, 0)
+
+  // Saldo projetado = saldo real agora + receitas futuras - fixas a pagar - var futuras - caixinha das futuras
+  const projectedBalance = realCurrentBalance + futureMonthIncomes - unpaidFixed - futureMonthVariables - futureMonthIncomes * 0.10
+
+  // availableBalance mantido para compatibilidade: saldo projetado + gastos var já feitos
+  const availableBalance = projectedBalance + variableExpensesTotalThisMonth
+
+  // Orçamento diário = saldo projetado / dias restantes
+  const dailyBudget = daysRemaining > 0 ? projectedBalance / daysRemaining : projectedBalance
 
   // Termômetro
   let thermometerStatus: FinancialSummary['thermometerStatus'] = 'green'
@@ -85,7 +127,6 @@ export function calculateFinancials(data: FinancialData, referenceDate: Date = n
   } else {
     const ratio = todaySpent / dailyBudget
     thermometerPercentage = Math.min(Math.round(ratio * 100), 100)
-
     if (ratio >= 1) {
       thermometerStatus = projectedBalance < 0 ? 'dark-red' : 'red'
     } else if (ratio >= 0.8) {
@@ -94,24 +135,6 @@ export function calculateFinancials(data: FinancialData, referenceDate: Date = n
       thermometerStatus = 'green'
     }
   }
-
-  // Receitas já recebidas até hoje (date <= today, Brazil tz)
-  const receivedIncomesTotal = data.futureIncomes
-    .filter(i => toLocalDateStr(new Date(i.date)) <= todayStr)
-    .reduce((sum, i) => sum + i.amount, 0)
-
-  // Gastos variáveis até hoje (excluindo futuros e excluindo os da caixinha)
-  const variableExpensesToday = data.allVariableExpenses
-    .filter(e => !e.fromCaixinha && toLocalDateStr(new Date(e.date)) <= todayStr)
-    .reduce((sum, e) => sum + e.amount, 0)
-
-  // Fixas já pagas (saíram da conta)
-  const paidFixedTotal = data.futureFixedExpenses
-    .filter(e => e.paid)
-    .reduce((sum, e) => sum + e.amount, 0)
-
-  // Saldo real agora = inicial + recebido até hoje - gastos até hoje - fixas pagas - caixinha bruta
-  const realCurrentBalance = data.currentBalance + receivedIncomesTotal - variableExpensesToday - paidFixedTotal - (data.allIncomesTotal ?? 0) * 0.10
 
   return {
     currentBalance: data.currentBalance,
