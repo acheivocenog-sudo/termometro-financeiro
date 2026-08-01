@@ -97,11 +97,20 @@ function calculateRunway(
   return { date: addMonths(today, 24), shortfall: 0, lastPaidDescription: 'Contas cobertas pelos próximos 2 anos!' }
 }
 
+const toBrazilDateStr = (d: Date) =>
+  new Date(d.getTime() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10)
+
 export async function GET() {
   const { userId, response } = await requireAuth()
   if (!userId) return response!
 
-  const today = new Date()
+  // Compute today in Brazil timezone (UTC-3) to avoid midnight rollover issues
+  const nowUTC = new Date()
+  const brazilStr = toBrazilDateStr(nowUTC)
+  const brazilYear = parseInt(brazilStr.slice(0, 4))
+  const brazilMonth = parseInt(brazilStr.slice(5, 7)) - 1
+  const brazilDay = parseInt(brazilStr.slice(8, 10))
+  const today = new Date(brazilYear, brazilMonth, brazilDay)
   const monthStart = startOfMonth(today)
   const monthEnd = endOfMonth(today)
 
@@ -120,13 +129,13 @@ export async function GET() {
       where: { userId, date: { gte: monthStart, lte: monthEnd } },
       orderBy: { date: 'desc' },
     }),
-    prisma.income.aggregate({ where: { userId, OR: [{ recurring: true }, { date: { lte: today } }] }, _sum: { amount: true } }),
+    prisma.income.aggregate({ where: { userId, OR: [{ recurring: true }, { date: { lte: nowUTC } }] }, _sum: { amount: true } }),
     prisma.variableExpense.aggregate({ where: { userId, fromCaixinha: true }, _sum: { amount: true } }),
     prisma.installment.findMany({ where: { userId, remainingInstallments: { gt: 0 } } }),
-    // Future one-time incomes (not recurring, date > today) — needed for runway projection
-    prisma.income.findMany({ where: { userId, recurring: false, date: { gt: today } } }),
+    // Future one-time incomes (not recurring, date > now) — needed for runway projection
+    prisma.income.findMany({ where: { userId, recurring: false, date: { gt: nowUTC } } }),
     // Future variable expenses registered in DB — mirrors what forecast shows for future days
-    prisma.variableExpense.findMany({ where: { userId, fromCaixinha: false, date: { gt: today } } }),
+    prisma.variableExpense.findMany({ where: { userId, fromCaixinha: false, date: { gt: nowUTC } } }),
   ])
 
   const allIncomes = [...monthIncomes, ...recurringIncomes]
