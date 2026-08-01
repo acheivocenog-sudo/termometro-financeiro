@@ -114,8 +114,11 @@ export async function GET() {
   const monthStart = startOfMonth(today)
   const monthEnd = endOfMonth(today)
 
-  const [balance, monthIncomes, recurringIncomes, fixedExpenses, variableExpenses, allTimeIncomes, caixinhaSpentAgg, installments, futureOneTimeIncomes, futureVariableExpenses] = await Promise.all([
+  const [balance, currentMonthIncomes, recurringIncomes, fixedExpenses,
+    currentMonthVariableExpenses, allPastVariableExpenses, allPastNonRecurringIncomes,
+    allTimeIncomes, caixinhaSpentAgg, installments, futureOneTimeIncomes, futureVariableExpenses] = await Promise.all([
     prisma.balance.findUnique({ where: { userId } }),
+    // Current month incomes — used for display ("Receitas do Mês") and calendar
     prisma.income.findMany({
       where: { userId, recurring: false, date: { gte: monthStart, lte: monthEnd } },
       orderBy: { date: 'asc' },
@@ -125,9 +128,20 @@ export async function GET() {
       orderBy: { date: 'asc' },
     }),
     prisma.fixedExpense.findMany({ where: { userId }, orderBy: { dueDay: 'asc' } }),
+    // Current month variable expenses — used for display ("Gastos Variáveis") and calendar
     prisma.variableExpense.findMany({
       where: { userId, date: { gte: monthStart, lte: monthEnd } },
       orderBy: { date: 'desc' },
+    }),
+    // ALL historical variable expenses (non-caixinha, up to now) — used for realCurrentBalance
+    prisma.variableExpense.findMany({
+      where: { userId, fromCaixinha: false, date: { lte: nowUTC } },
+      orderBy: { date: 'desc' },
+    }),
+    // ALL historical non-recurring incomes up to now — used for realCurrentBalance
+    prisma.income.findMany({
+      where: { userId, recurring: false, date: { lte: nowUTC } },
+      orderBy: { date: 'asc' },
     }),
     prisma.income.aggregate({ where: { userId, OR: [{ recurring: true }, { date: { lte: nowUTC } }] }, _sum: { amount: true } }),
     prisma.variableExpense.aggregate({ where: { userId, fromCaixinha: true }, _sum: { amount: true } }),
@@ -138,40 +152,53 @@ export async function GET() {
     prisma.variableExpense.findMany({ where: { userId, fromCaixinha: false, date: { gt: nowUTC } } }),
   ])
 
-  const allIncomes = [...monthIncomes, ...recurringIncomes]
   const allIncomesTotal = Number(allTimeIncomes._sum.amount ?? 0)
   const caixinhaSpent = Number(caixinhaSpentAgg._sum.amount ?? 0)
 
+  // futureIncomes for calculateFinancials:
+  //   - allPastNonRecurringIncomes: all history → receivedIncomesTotal accumulates correctly cross-month
+  //   - recurringIncomes: matched by day-of-month inside calculateFinancials
+  //   - futureOneTimeIncomes: future-dated so excluded from receivedIncomesTotal but counted in futureIncomesTotal display
+  const allHistoricalIncomes = [...allPastNonRecurringIncomes, ...recurringIncomes, ...futureOneTimeIncomes]
+
   const data = {
     currentBalance: Number(balance?.amount ?? 0),
-    futureIncomes: allIncomes.map(i => ({ ...i, amount: Number(i.amount) })),
+    futureIncomes: allHistoricalIncomes.map(i => ({ ...i, amount: Number(i.amount) })),
     futureFixedExpenses: fixedExpenses.map(e => ({ ...e, amount: Number(e.amount) })),
-    todayVariableExpenses: variableExpenses.map(e => ({ ...e, amount: Number(e.amount) })),
-    allVariableExpenses: variableExpenses.map(e => ({ ...e, amount: Number(e.amount) })),
+    todayVariableExpenses: currentMonthVariableExpenses.map(e => ({ ...e, amount: Number(e.amount) })),
+    // allVariableExpenses: all-time so realCurrentBalance subtracts full history; finance.ts
+    // filters by current month when computing variableExpensesTotalThisMonth for display
+    allVariableExpenses: allPastVariableExpenses.map(e => ({ ...e, amount: Number(e.amount) })),
     allIncomesTotal,
     caixinhaSpent,
   }
 
   const summary = calculateFinancials(data, today)
-  const calendar = buildCalendarData(data, summary, today)
+  // Calendar uses current-month data only — pass current-month incomes/expenses
+  const calendarData = {
+    ...data,
+    futureIncomes: [...currentMonthIncomes, ...recurringIncomes].map(i => ({ ...i, amount: Number(i.amount) })),
+    allVariableExpenses: currentMonthVariableExpenses.map(e => ({ ...e, amount: Number(e.amount) })),
+  }
+  const calendar = buildCalendarData(calendarData, summary, today)
 
   const runway = calculateRunway(
-        summary.realCurrentBalance,
-        null,
-        recurringIncomes.map(i => ({ amount: Number(i.amount), date: i.date })),
-        fixedExpenses.map(e => ({ amount: Number(e.amount), dueDay: e.dueDay, paid: e.paid })),
-        installments.map(i => ({ amount: Number(i.amount), dueDay: i.dueDay, remainingInstallments: i.remainingInstallments, startDate: i.startDate })),
-        futureOneTimeIncomes.map(i => ({ amount: Number(i.amount), date: i.date })),
-        futureVariableExpenses.map(e => ({ amount: Number(e.amount), date: e.date })),
-        today,
-      )
+    summary.realCurrentBalance,
+    null,
+    recurringIncomes.map(i => ({ amount: Number(i.amount), date: i.date })),
+    fixedExpenses.map(e => ({ amount: Number(e.amount), dueDay: e.dueDay, paid: e.paid })),
+    installments.map(i => ({ amount: Number(i.amount), dueDay: i.dueDay, remainingInstallments: i.remainingInstallments, startDate: i.startDate })),
+    futureOneTimeIncomes.map(i => ({ amount: Number(i.amount), date: i.date })),
+    futureVariableExpenses.map(e => ({ amount: Number(e.amount), date: e.date })),
+    today,
+  )
 
   return NextResponse.json({
     summary,
     runway,
-    incomes: allIncomes.map(i => ({ ...i, amount: Number(i.amount) })),
+    incomes: [...currentMonthIncomes, ...recurringIncomes].map(i => ({ ...i, amount: Number(i.amount) })),
     fixedExpenses: fixedExpenses.map(e => ({ ...e, amount: Number(e.amount) })),
-    variableExpenses: variableExpenses.map(e => ({ ...e, amount: Number(e.amount) })),
+    variableExpenses: currentMonthVariableExpenses.map(e => ({ ...e, amount: Number(e.amount) })),
     calendar,
   })
 }
