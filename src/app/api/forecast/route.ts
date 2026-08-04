@@ -39,30 +39,49 @@ export async function GET(req: Request) {
 
   const [balance, recurringIncomes, currentMonthIncomes, targetMonthIncomes,
     fixedExpenses, installments, currentVariableExpenses, targetVariableExpenses,
-    allTimeIncomes, caixinhaSpentAgg] = await Promise.all([
+    allTimeIncomes, caixinhaSpentAgg,
+    allPastVariableExpenses, allPastNonRecurringIncomes] = await Promise.all([
     prisma.balance.findUnique({ where: { userId } }),
     prisma.income.findMany({ where: { userId, recurring: true } }),
     prisma.income.findMany({ where: { userId, recurring: false, date: { gte: currentStart, lte: currentEnd } } }),
     isCurrentMonth ? Promise.resolve([]) : prisma.income.findMany({ where: { userId, recurring: false, date: { gte: targetStart, lte: targetEnd } } }),
     prisma.fixedExpense.findMany({ where: { userId } }),
     prisma.installment.findMany({ where: { userId, remainingInstallments: { gt: 0 } } }),
-    // Exclude caixinha expenses from general balance
     prisma.variableExpense.findMany({ where: { userId, fromCaixinha: false, date: { gte: currentStart, lte: currentEnd } } }),
     isCurrentMonth ? Promise.resolve([]) : prisma.variableExpense.findMany({ where: { userId, fromCaixinha: false, date: { gte: targetStart, lte: targetEnd } } }),
-    // Only count incomes already received (recurring always count; non-recurring only up to today)
     prisma.income.aggregate({ where: { userId, OR: [{ recurring: true }, { date: { lt: new Date(todayYear, todayMonth, todayDay + 1) } }] }, _sum: { amount: true } }),
     prisma.variableExpense.aggregate({ where: { userId, fromCaixinha: true }, _sum: { amount: true } }),
+    // All-time historical data needed to compute realCurrentBalance across month boundaries
+    prisma.variableExpense.findMany({ where: { userId, fromCaixinha: false, date: { lte: nowUTC } } }),
+    prisma.income.findMany({ where: { userId, recurring: false, date: { lte: nowUTC } } }),
   ])
 
-  // currentBalance = the balance the user manually set (treated as month-start anchor).
-  // Deduct gross caixinha (10% of all incomes) — same as dashboard realCurrentBalance.
-  // Caixinha spending comes from the caixinha pool, not the main balance, so never subtract caixinhaSpent here.
   const rawBalance = Number(balance?.amount ?? 0)
   const totalIncomesEver = Number(allTimeIncomes._sum.amount ?? 0)
-  const caixinhaSpent = Number(caixinhaSpentAgg._sum.amount ?? 0)
   const caixinhaGross = totalIncomesEver * 0.10
-  const caixinhaNet = caixinhaGross - caixinhaSpent  // used only for future-month startingBalance
-  const currentBalance = rawBalance - caixinhaGross
+
+  // realCurrentBalance: same formula as dashboard — accumulates full transaction history
+  const allReceivedToDate = [
+    ...allPastNonRecurringIncomes,
+    ...recurringIncomes.filter(i => new Date(i.date).getDate() <= todayDay),
+  ].reduce((s, i) => s + Number(i.amount), 0)
+  const allVariableSpentToDate = allPastVariableExpenses.reduce((s, e) => s + Number(e.amount), 0)
+  const paidFixedTotal = fixedExpenses.filter(e => e.paid).reduce((s, e) => s + Number(e.amount), 0)
+  const realCurrentBalance = rawBalance + allReceivedToDate - allVariableSpentToDate - paidFixedTotal - caixinhaGross
+
+  // startOfMonthBalance = balance at the END of the day before month started (day 0).
+  // = realCurrentBalance minus what has already happened this month,
+  //   so the day-by-day loop can replay this month's transactions without double-counting.
+  const currentMonthReceivedSoFar = [
+    ...currentMonthIncomes.filter(i => toBrazilDateStr(new Date(i.date)) <= todayBrazilStr),
+    ...recurringIncomes.filter(i => new Date(i.date).getDate() <= todayDay),
+  ].reduce((s, i) => s + Number(i.amount), 0)
+  const currentMonthSpentSoFar = currentVariableExpenses
+    .filter(e => toBrazilDateStr(new Date(e.date)) <= todayBrazilStr)
+    .reduce((s, e) => s + Number(e.amount), 0)
+
+  // Undo current-month transactions from realCurrentBalance to get the prior-month-end balance
+  const currentBalance = realCurrentBalance - currentMonthReceivedSoFar + currentMonthSpentSoFar + paidFixedTotal
   const monthStartBalance = currentBalance
 
   const isPastTarget = targetYear < todayYear || (targetYear === todayYear && targetMonth < todayMonth)
