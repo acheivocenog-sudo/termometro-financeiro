@@ -61,7 +61,9 @@ export function calculateFinancials(data: FinancialData, referenceDate: Date = n
     const brazil = new Date(d.getTime() - 3 * 60 * 60 * 1000)
     return brazil.toISOString().slice(0, 10)
   }
-  const todayStr = toLocalDateStr(today)
+  // today is already constructed as Brazil local date (new Date(brazilYear, brazilMonth, brazilDay))
+  // so format directly without subtracting 3h again (which would give yesterday)
+  const todayStr = format(today, 'yyyy-MM-dd')
   const todaySpent = data.todayVariableExpenses
     .filter(e => toLocalDateStr(new Date(e.date)) === todayStr)
     .reduce((sum, e) => sum + e.amount, 0)
