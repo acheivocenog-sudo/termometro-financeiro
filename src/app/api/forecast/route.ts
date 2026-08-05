@@ -100,42 +100,46 @@ export async function GET(req: Request) {
   let startingBalance = currentBalance
 
   if (isPastTarget) {
-    // realCurrentBalance = rawBalance + all received - all spent - paidFixed - caixinha
-    const allVariableSpent = currentVariableExpenses.reduce((s, e) => s + Number(e.amount), 0)
-    const allReceived = [
-      ...currentMonthIncomes,
-      ...recurringIncomes.filter(i => new Date(i.date).getDate() <= todayDay),
-    ].reduce((s, i) => s + Number(i.amount), 0)
-    const paidFixed = fixedExpenses.filter(e => e.paid).reduce((s, e) => s + Number(e.amount), 0)
-    const realCurrentBalance = rawBalance + allReceived - allVariableSpent - paidFixed - caixinhaGross
-
-    // Walk backward from realCurrentBalance to the start of the target month by
-    // reversing each month between target+1 and current.
-    let bal = realCurrentBalance
-    // First reverse the current month up to today
-    const curMonthIn = [
-      ...recurringIncomes.filter(i => new Date(i.date).getDate() <= todayDay),
-      ...currentMonthIncomes.filter(i => toBrazilDateStr(new Date(i.date)) <= todayBrazilStr),
-    ].reduce((s, i) => s + Number(i.amount), 0)
-    const curMonthOut = allVariableSpent + paidFixed
-    bal = bal - curMonthIn + curMonthOut
-
-    // Then reverse each intermediate full month (from current-1 down to target+1)
+    // Anchor: currentBalance = start of current month = end of previous month.
+    // Walk backward from there using actual transaction data for each intermediate month.
+    // This guarantees: end(month N) === start(month N+1) for every month boundary.
     const monthsBack = (todayYear - targetYear) * 12 + (todayMonth - targetMonth)
-    for (let m = 1; m < monthsBack; m++) {
-      const mIdx = todayYear * 12 + todayMonth - m
-      const mYear = Math.floor(mIdx / 12)
-      const mMonth = mIdx % 12
-      // We don't have full historical data for intermediate months — approximate with recurring
-      const mIn = recurringIncomes.reduce((s, i) => s + Number(i.amount), 0)
-      const mOut = fixedExpenses.reduce((s, e) => s + Number(e.amount), 0)
-        + installments.filter(i => {
-            const instStartM = new Date(i.startDate).getFullYear() * 12 + new Date(i.startDate).getMonth()
-            const mFromStart = mYear * 12 + mMonth - instStartM
-            return mFromStart >= 0 && mFromStart < i.remainingInstallments
-          }).reduce((s, i) => s + Number(i.amount), 0)
-      bal = bal - mIn + mOut
+    let bal = currentBalance
+
+    for (let m = 0; m < monthsBack; m++) {
+      // The month we are stepping back through (m=0 is the month immediately before current)
+      const stepIdx = todayYear * 12 + todayMonth - 1 - m
+      const stepYear = Math.floor(stepIdx / 12)
+      const stepMonth = stepIdx % 12
+      const stepStart = new Date(stepYear, stepMonth, 1)
+      const stepEnd = endOfMonth(new Date(stepYear, stepMonth, 1))
+
+      // Actual variable expenses for this month (data available from balanceHistoryStart onward)
+      const mVarExp = allPastVariableExpenses
+        .filter(e => { const d = new Date(e.date); return d >= stepStart && d <= stepEnd })
+        .reduce((s, e) => s + Number(e.amount), 0)
+
+      // Actual non-recurring incomes for this month
+      const mNonRecInc = allPastNonRecurringIncomes
+        .filter(i => { const d = new Date(i.date); return d >= stepStart && d <= stepEnd })
+        .reduce((s, i) => s + Number(i.amount), 0)
+
+      // Recurring incomes (same amount every month)
+      const mRecInc = recurringIncomes.reduce((s, i) => s + Number(i.amount), 0)
+
+      // Installments active in this month
+      const mInstallments = installments
+        .filter(i => {
+          const instStartM = new Date(i.startDate).getFullYear() * 12 + new Date(i.startDate).getMonth()
+          const mFromStart = stepYear * 12 + stepMonth - instStartM
+          return mFromStart >= 0 && mFromStart < i.remainingInstallments
+        })
+        .reduce((s, i) => s + Number(i.amount), 0)
+
+      // Reverse this month: start = end + out - in
+      bal = bal + mVarExp + mInstallments - mNonRecInc - mRecInc
     }
+
     startingBalance = bal
   } else if (isFuture) {
     // Step 1: compute realCurrentBalance = what the user has right now
