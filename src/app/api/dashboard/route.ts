@@ -114,10 +114,17 @@ export async function GET() {
   const monthStart = startOfMonth(today)
   const monthEnd = endOfMonth(today)
 
-  const [balance, currentMonthIncomes, recurringIncomes, fixedExpenses,
+  // Fetch balance first — its updatedAt tells us when the user last set their balance snapshot.
+  // We only accumulate transactions from that month onward to avoid double-counting expenses
+  // that were already reflected in the rawBalance at the time it was set.
+  const balance = await prisma.balance.findUnique({ where: { userId } })
+  const balanceHistoryStart = balance?.updatedAt
+    ? startOfMonth(balance.updatedAt)
+    : new Date(0)
+
+  const [currentMonthIncomes, recurringIncomes, fixedExpenses,
     currentMonthVariableExpenses, allPastVariableExpenses, allPastNonRecurringIncomes,
     allTimeIncomes, caixinhaSpentAgg, installments, futureOneTimeIncomes, futureVariableExpenses] = await Promise.all([
-    prisma.balance.findUnique({ where: { userId } }),
     // Current month incomes — used for display ("Receitas do Mês") and calendar
     prisma.income.findMany({
       where: { userId, recurring: false, date: { gte: monthStart, lte: monthEnd } },
@@ -133,17 +140,17 @@ export async function GET() {
       where: { userId, date: { gte: monthStart, lte: monthEnd } },
       orderBy: { date: 'desc' },
     }),
-    // ALL historical variable expenses (non-caixinha, up to now) — used for realCurrentBalance
+    // Historical variable expenses (non-caixinha, from balance month onward) — used for realCurrentBalance
     prisma.variableExpense.findMany({
-      where: { userId, fromCaixinha: false, date: { lte: nowUTC } },
+      where: { userId, fromCaixinha: false, date: { gte: balanceHistoryStart, lte: nowUTC } },
       orderBy: { date: 'desc' },
     }),
-    // ALL historical non-recurring incomes up to now — used for realCurrentBalance
+    // Historical non-recurring incomes (from balance month onward) — used for realCurrentBalance
     prisma.income.findMany({
-      where: { userId, recurring: false, date: { lte: nowUTC } },
+      where: { userId, recurring: false, date: { gte: balanceHistoryStart, lte: nowUTC } },
       orderBy: { date: 'asc' },
     }),
-    prisma.income.aggregate({ where: { userId, OR: [{ recurring: true }, { date: { lte: nowUTC } }] }, _sum: { amount: true } }),
+    prisma.income.aggregate({ where: { userId, OR: [{ recurring: true }, { date: { gte: balanceHistoryStart, lte: nowUTC } }] }, _sum: { amount: true } }),
     prisma.variableExpense.aggregate({ where: { userId, fromCaixinha: true }, _sum: { amount: true } }),
     prisma.installment.findMany({ where: { userId, remainingInstallments: { gt: 0 } } }),
     // Future one-time incomes (not recurring, date > now) — needed for runway projection

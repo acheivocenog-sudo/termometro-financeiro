@@ -37,11 +37,18 @@ export async function GET(req: Request) {
   const targetStart = startOfMonth(new Date(targetYear, targetMonth))
   const targetEnd = endOfMonth(new Date(targetYear, targetMonth))
 
-  const [balance, recurringIncomes, currentMonthIncomes, targetMonthIncomes,
+  // Fetch balance first to determine history start (month rawBalance was last set).
+  // Only count transactions from that month onward — avoids double-counting expenses
+  // already reflected in rawBalance at the time it was last updated.
+  const balance = await prisma.balance.findUnique({ where: { userId } })
+  const balanceHistoryStart = balance?.updatedAt
+    ? startOfMonth(balance.updatedAt)
+    : new Date(0)
+
+  const [recurringIncomes, currentMonthIncomes, targetMonthIncomes,
     fixedExpenses, installments, currentVariableExpenses, targetVariableExpenses,
     allTimeIncomes, caixinhaSpentAgg,
     allPastVariableExpenses, allPastNonRecurringIncomes] = await Promise.all([
-    prisma.balance.findUnique({ where: { userId } }),
     prisma.income.findMany({ where: { userId, recurring: true } }),
     prisma.income.findMany({ where: { userId, recurring: false, date: { gte: currentStart, lte: currentEnd } } }),
     isCurrentMonth ? Promise.resolve([]) : prisma.income.findMany({ where: { userId, recurring: false, date: { gte: targetStart, lte: targetEnd } } }),
@@ -49,11 +56,11 @@ export async function GET(req: Request) {
     prisma.installment.findMany({ where: { userId, remainingInstallments: { gt: 0 } } }),
     prisma.variableExpense.findMany({ where: { userId, fromCaixinha: false, date: { gte: currentStart, lte: currentEnd } } }),
     isCurrentMonth ? Promise.resolve([]) : prisma.variableExpense.findMany({ where: { userId, fromCaixinha: false, date: { gte: targetStart, lte: targetEnd } } }),
-    prisma.income.aggregate({ where: { userId, OR: [{ recurring: true }, { date: { lt: new Date(todayYear, todayMonth, todayDay + 1) } }] }, _sum: { amount: true } }),
+    prisma.income.aggregate({ where: { userId, OR: [{ recurring: true }, { date: { gte: balanceHistoryStart, lte: new Date(todayYear, todayMonth, todayDay + 1) } }] }, _sum: { amount: true } }),
     prisma.variableExpense.aggregate({ where: { userId, fromCaixinha: true }, _sum: { amount: true } }),
-    // All-time historical data needed to compute realCurrentBalance across month boundaries
-    prisma.variableExpense.findMany({ where: { userId, fromCaixinha: false, date: { lte: nowUTC } } }),
-    prisma.income.findMany({ where: { userId, recurring: false, date: { lte: nowUTC } } }),
+    // Historical data from balance month onward — avoids double-counting pre-balance expenses
+    prisma.variableExpense.findMany({ where: { userId, fromCaixinha: false, date: { gte: balanceHistoryStart, lte: nowUTC } } }),
+    prisma.income.findMany({ where: { userId, recurring: false, date: { gte: balanceHistoryStart, lte: nowUTC } } }),
   ])
 
   const rawBalance = Number(balance?.amount ?? 0)
