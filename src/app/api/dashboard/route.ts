@@ -173,9 +173,8 @@ export async function GET() {
     futureIncomes: allHistoricalIncomes.map(i => ({ ...i, amount: Number(i.amount) })),
     futureFixedExpenses: fixedExpenses.map(e => ({ ...e, amount: Number(e.amount) })),
     todayVariableExpenses: currentMonthVariableExpenses.map(e => ({ ...e, amount: Number(e.amount) })),
-    // allVariableExpenses: all-time so realCurrentBalance subtracts full history; finance.ts
-    // filters by current month when computing variableExpensesTotalThisMonth for display
     allVariableExpenses: allPastVariableExpenses.map(e => ({ ...e, amount: Number(e.amount) })),
+    installments: installments.map(i => ({ amount: Number(i.amount), dueDay: i.dueDay, remainingInstallments: i.remainingInstallments, startDate: i.startDate })),
     allIncomesTotal,
     caixinhaSpent,
   }

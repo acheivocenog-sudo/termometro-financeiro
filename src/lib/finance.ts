@@ -6,6 +6,7 @@ export interface FinancialData {
   futureFixedExpenses: Array<{ id: string; description: string; amount: number; dueDay: number; paid: boolean }>
   todayVariableExpenses: Array<{ id: string; description: string; category: string; amount: number; date: Date; fromCaixinha: boolean }>
   allVariableExpenses: Array<{ id: string; description: string; category: string; amount: number; date: Date; fromCaixinha: boolean }>
+  installments?: Array<{ amount: number; dueDay: number; remainingInstallments: number; startDate: Date }>
   allIncomesTotal?: number
   caixinhaSpent?: number
 }
@@ -110,8 +111,20 @@ export function calculateFinancials(data: FinancialData, referenceDate: Date = n
     .filter(e => !e.paid)
     .reduce((sum, e) => sum + e.amount, 0)
 
-  // Saldo projetado = saldo real agora + receitas futuras - fixas a pagar - var futuras - caixinha das futuras
-  const projectedBalance = realCurrentBalance + futureMonthIncomes - unpaidFixed - futureMonthVariables - futureMonthIncomes * 0.10
+  // Parcelas ativas neste mês ainda não vencidas
+  const todayDay = today.getDate()
+  const currentMonthNum = today.getFullYear() * 12 + today.getMonth()
+  const unpaidInstallments = (data.installments ?? [])
+    .filter(i => {
+      if (i.dueDay <= todayDay) return false
+      const instStartM = new Date(i.startDate).getFullYear() * 12 + new Date(i.startDate).getMonth()
+      const mFromStart = currentMonthNum - instStartM
+      return mFromStart >= 0 && mFromStart < i.remainingInstallments
+    })
+    .reduce((sum, i) => sum + i.amount, 0)
+
+  // Saldo projetado = saldo real agora + receitas futuras - fixas a pagar - parcelas a vencer - var futuras - caixinha das futuras
+  const projectedBalance = realCurrentBalance + futureMonthIncomes - unpaidFixed - unpaidInstallments - futureMonthVariables - futureMonthIncomes * 0.10
 
   // availableBalance mantido para compatibilidade: saldo projetado + gastos var já feitos
   const availableBalance = projectedBalance + variableExpensesTotalThisMonth
