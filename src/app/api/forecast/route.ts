@@ -100,47 +100,59 @@ export async function GET(req: Request) {
   let startingBalance = currentBalance
 
   if (isPastTarget) {
-    // Anchor: currentBalance = start of current month = end of previous month.
-    // Walk backward from there using actual transaction data for each intermediate month.
-    // This guarantees: end(month N) === start(month N+1) for every month boundary.
-    const monthsBack = (todayYear - targetYear) * 12 + (todayMonth - targetMonth)
-    let bal = currentBalance
+    // Compute the balance at the END of the target month independently,
+    // using only data available through that date. This keeps past-month balances
+    // stable and unaffected by current/future month activities (e.g. caixinha from
+    // August incomes should not affect July's computed balance).
 
-    for (let m = 0; m < monthsBack; m++) {
-      // The month we are stepping back through (m=0 is the month immediately before current)
-      const stepIdx = todayYear * 12 + todayMonth - 1 - m
-      const stepYear = Math.floor(stepIdx / 12)
-      const stepMonth = stepIdx % 12
-      const stepStart = new Date(stepYear, stepMonth, 1)
-      const stepEnd = endOfMonth(new Date(stepYear, stepMonth, 1))
+    const targetMonthNum = targetYear * 12 + targetMonth
 
-      // Actual variable expenses for this month (data available from balanceHistoryStart onward)
-      const mVarExp = allPastVariableExpenses
-        .filter(e => { const d = new Date(e.date); return d >= stepStart && d <= stepEnd })
-        .reduce((s, e) => s + Number(e.amount), 0)
+    // Sum all non-recurring incomes from balanceHistoryStart up to end of target month
+    const incThroughTarget = allPastNonRecurringIncomes
+      .filter(i => new Date(i.date) <= targetEnd)
+      .reduce((s, i) => s + Number(i.amount), 0)
 
-      // Actual non-recurring incomes for this month
-      const mNonRecInc = allPastNonRecurringIncomes
-        .filter(i => { const d = new Date(i.date); return d >= stepStart && d <= stepEnd })
-        .reduce((s, i) => s + Number(i.amount), 0)
+    // Recurring incomes: count how many months they've been active through target month
+    const balHistStartMonthNum = balanceHistoryStart.getFullYear() * 12 + balanceHistoryStart.getMonth()
+    const recurringMonthsCount = Math.max(0, targetMonthNum - balHistStartMonthNum + 1)
+    const recurringThroughTarget = recurringIncomes.reduce((s, i) => s + Number(i.amount), 0) * recurringMonthsCount
 
-      // Recurring incomes (same amount every month)
-      const mRecInc = recurringIncomes.reduce((s, i) => s + Number(i.amount), 0)
+    // Sum all variable expenses from balanceHistoryStart up to end of target month
+    const varThroughTarget = allPastVariableExpenses
+      .filter(e => new Date(e.date) <= targetEnd)
+      .reduce((s, e) => s + Number(e.amount), 0)
 
-      // Installments active in this month
-      const mInstallments = installments
-        .filter(i => {
-          const instStartM = new Date(i.startDate).getFullYear() * 12 + new Date(i.startDate).getMonth()
-          const mFromStart = stepYear * 12 + stepMonth - instStartM
-          return mFromStart >= 0 && mFromStart < i.remainingInstallments
-        })
-        .reduce((s, i) => s + Number(i.amount), 0)
+    // Caixinha: only on incomes through target month (not inflated by future months)
+    const caixinhaAtTargetEnd = (incThroughTarget + recurringThroughTarget) * 0.10
 
-      // Reverse this month: start = end + out - in
-      bal = bal + mVarExp + mInstallments - mNonRecInc - mRecInc
-    }
+    // Real balance at end of target month
+    const realBalAtTargetEnd = rawBalance + incThroughTarget + recurringThroughTarget
+      - varThroughTarget - paidFixedTotal - caixinhaAtTargetEnd
 
-    startingBalance = bal
+    // Reverse the target month's own transactions to get the starting balance
+    const targetMonthStart = new Date(targetYear, targetMonth, 1)
+
+    const targetMonthNonRecInc = allPastNonRecurringIncomes
+      .filter(i => { const d = new Date(i.date); return d >= targetMonthStart && d <= targetEnd })
+      .reduce((s, i) => s + Number(i.amount), 0)
+
+    const targetMonthRecInc = recurringIncomes.reduce((s, i) => s + Number(i.amount), 0)
+
+    const targetMonthVar = allPastVariableExpenses
+      .filter(e => { const d = new Date(e.date); return d >= targetMonthStart && d <= targetEnd })
+      .reduce((s, e) => s + Number(e.amount), 0)
+
+    // Installments active in target month (the day loop deducts them, so reverse them here)
+    const targetInstallmentTotal = installments
+      .filter(i => {
+        const instStartM = new Date(i.startDate).getFullYear() * 12 + new Date(i.startDate).getMonth()
+        const mFromStart = targetMonthNum - instStartM
+        return mFromStart >= 0 && mFromStart < i.remainingInstallments
+      })
+      .reduce((s, i) => s + Number(i.amount), 0)
+
+    startingBalance = realBalAtTargetEnd - targetMonthNonRecInc - targetMonthRecInc
+      + targetMonthVar + targetInstallmentTotal
   } else if (isFuture) {
     // Step 1: compute realCurrentBalance = what the user has right now
     const variableSpentToDate = currentVariableExpenses
