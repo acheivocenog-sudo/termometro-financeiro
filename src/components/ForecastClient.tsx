@@ -11,7 +11,12 @@ interface ForecastEntry {
   type: 'income' | 'fixed' | 'installment' | 'variable'
   paid?: boolean
   category?: string
-  remainingInstallments?: number
+}
+
+interface CaixinhaEntry {
+  description: string
+  amount: number
+  type: 'caixinha_income' | 'caixinha_expense'
 }
 
 interface ForecastDay {
@@ -23,6 +28,12 @@ interface ForecastDay {
   totalIn: number
   totalOut: number
   balance: number | null
+  caixinha: {
+    entries: CaixinhaEntry[]
+    totalIn: number
+    totalOut: number
+    balance: number
+  }
 }
 
 interface ForecastData {
@@ -30,6 +41,7 @@ interface ForecastData {
   currentBalance: number
   isFuture: boolean
   isCurrentMonth: boolean
+  caixinhaBalance: number
 }
 
 function formatCurrency(value: number) {
@@ -102,20 +114,28 @@ export default function ForecastClient() {
     <div className="space-y-4">
       {/* Header com navegação */}
       <div className="flex items-center justify-between">
-        <div>
+        <div className="flex-1">
           <h1 className="text-2xl font-bold text-white">Previsão Financeira</h1>
           {data && (() => {
             const todayRow = data.days.find((d: any) => d.isToday)
             const raw = todayRow ? todayRow.balance : data.days[data.days.length - 1]?.balance
             const displayBalance: number = raw ?? 0
             return (
-              <p className="text-zinc-400 text-sm mt-1">
-                {data.isCurrentMonth ? 'Saldo atual:' : 'Saldo projetado do mês:'}{' '}
-                <span className={`font-semibold ${displayBalance >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                  {formatCurrency(displayBalance)}
-                </span>
-                {data.isFuture && <span className="ml-2 text-zinc-500 text-xs">(projetado)</span>}
-              </p>
+              <div className="flex flex-wrap gap-4 mt-2">
+                <p className="text-zinc-400 text-sm">
+                  {data.isCurrentMonth ? 'Saldo atual:' : 'Saldo projetado do mês:'}{' '}
+                  <span className={`font-semibold ${displayBalance >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    {formatCurrency(displayBalance)}
+                  </span>
+                  {data.isFuture && <span className="ml-2 text-zinc-500 text-xs">(projetado)</span>}
+                </p>
+                <p className="text-zinc-400 text-sm">
+                  Saldo Caixinha:{' '}
+                  <span className={`font-semibold ${data.caixinhaBalance >= 0 ? 'text-yellow-400' : 'text-red-400'}`}>
+                    {formatCurrency(data.caixinhaBalance)}
+                  </span>
+                </p>
+              </div>
             )
           })()}
         </div>
@@ -226,7 +246,7 @@ export default function ForecastClient() {
                                 {getTypeLabel(entry.type)}
                               </span>
                               <span className="text-zinc-300">{entry.description}</span>
-                              {entry.category && (
+                              {entry.category && entry.category !== 'Caixinha' && (
                                 <span className="text-zinc-500 text-xs">({entry.category})</span>
                               )}
                             </div>
@@ -235,6 +255,30 @@ export default function ForecastClient() {
                             </span>
                           </div>
                         ))}
+                        {day.caixinha?.entries.length > 0 && (
+                          <div className="mt-2 pt-2 border-t border-yellow-500/20">
+                            <p className="text-xs text-yellow-500/70 font-semibold mb-1.5 uppercase tracking-wider">Caixinha</p>
+                            {day.caixinha.entries.map((entry, i) => (
+                              <div key={i} className="flex items-center justify-between text-sm">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-500/10 text-yellow-400">
+                                    {entry.type === 'caixinha_income' ? 'Depósito' : 'Gasto'}
+                                  </span>
+                                  <span className="text-zinc-300">{entry.description}</span>
+                                </div>
+                                <span className={entry.type === 'caixinha_income' ? 'text-yellow-400 font-medium' : 'text-orange-400 font-medium'}>
+                                  {entry.type === 'caixinha_income' ? '+' : '-'}{formatCurrency(entry.amount)}
+                                </span>
+                              </div>
+                            ))}
+                            <div className="flex justify-between text-xs text-zinc-500 mt-1.5 pt-1 border-t border-zinc-800/50">
+                              <span>Saldo Caixinha após este dia</span>
+                              <span className={day.caixinha.balance >= 0 ? 'text-yellow-400' : 'text-red-400'}>
+                                {formatCurrency(day.caixinha.balance)}
+                              </span>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

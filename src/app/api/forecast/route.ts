@@ -47,7 +47,7 @@ export async function GET(req: Request) {
 
   const [recurringIncomes, currentMonthIncomes, targetMonthIncomes,
     fixedExpenses, installments, currentVariableExpenses, targetVariableExpenses,
-    allTimeIncomes, caixinhaSpentAgg,
+    allTimeIncomes, allCaixinhaExpenses,
     allPastVariableExpenses, allPastNonRecurringIncomes] = await Promise.all([
     prisma.income.findMany({ where: { userId, recurring: true } }),
     prisma.income.findMany({ where: { userId, recurring: false, date: { gte: currentStart, lte: currentEnd } } }),
@@ -57,7 +57,7 @@ export async function GET(req: Request) {
     prisma.variableExpense.findMany({ where: { userId, fromCaixinha: false, date: { gte: currentStart, lte: currentEnd } } }),
     isCurrentMonth ? Promise.resolve([]) : prisma.variableExpense.findMany({ where: { userId, fromCaixinha: false, date: { gte: targetStart, lte: targetEnd } } }),
     prisma.income.aggregate({ where: { userId, OR: [{ recurring: true }, { date: { gte: balanceHistoryStart, lte: new Date(todayYear, todayMonth, todayDay + 1) } }] }, _sum: { amount: true } }),
-    prisma.variableExpense.aggregate({ where: { userId, fromCaixinha: true }, _sum: { amount: true } }),
+    prisma.variableExpense.findMany({ where: { userId, fromCaixinha: true } }),
     // Historical data from balance month onward — avoids double-counting pre-balance expenses
     prisma.variableExpense.findMany({ where: { userId, fromCaixinha: false, date: { gte: balanceHistoryStart, lte: nowUTC } } }),
     prisma.income.findMany({ where: { userId, recurring: false, date: { gte: balanceHistoryStart, lte: nowUTC } } }),
@@ -66,6 +66,29 @@ export async function GET(req: Request) {
   const rawBalance = Number(balance?.amount ?? 0)
   const totalIncomesEver = Number(allTimeIncomes._sum.amount ?? 0)
   const caixinhaGross = totalIncomesEver * 0.10
+
+  // Caixinha balance (current snapshot — same formula as dashboard)
+  const allCaixinhaSpentTotal = allCaixinhaExpenses.reduce((s, e) => s + Number(e.amount), 0)
+  const caixinhaCurrentBalance = caixinhaGross - allCaixinhaSpentTotal
+
+  // Caixinha expenses for target month (shown day-by-day separately from main balance)
+  const targetCaixinhaExpenses = allCaixinhaExpenses.filter(e => {
+    const d = new Date(e.date)
+    return d >= targetStart && d <= targetEnd
+  })
+
+  // Caixinha balance at the START of the target month
+  // = 10% of all incomes before target month - all caixinha expenses before target month
+  const caixinhaAtTargetStart = (() => {
+    const tmStart = new Date(targetYear, targetMonth, 1)
+    const incBefore = allPastNonRecurringIncomes
+      .filter(i => new Date(i.date) < tmStart)
+      .reduce((s, i) => s + Number(i.amount), 0)
+    const spentBefore = allCaixinhaExpenses
+      .filter(e => new Date(e.date) < tmStart)
+      .reduce((s, e) => s + Number(e.amount), 0)
+    return incBefore * 0.10 - spentBefore
+  })()
 
   // realCurrentBalance: same formula as dashboard — accumulates full transaction history
   const allReceivedToDate = [
@@ -207,6 +230,7 @@ export async function GET(req: Request) {
 
   const totalDays = getDaysInMonth(new Date(targetYear, targetMonth))
   let runningBalance = startingBalance
+  let caixinhaRunning = caixinhaAtTargetStart
   const days = []
 
   for (let d = 1; d <= totalDays; d++) {
@@ -275,15 +299,28 @@ export async function GET(req: Request) {
         type: 'variable' as const, category: e.category,
       }))
 
-    // For future days: deduct 10% caixinha from each income as it arrives
+    // ── Main balance: deduct 10% caixinha from future income days (past already baked into realCurrentBalance) ──
     const caixinha10pct = isFutureDay ? dayIncomes.reduce((s, e) => s + e.amount * 0.10, 0) : 0
-    const caixinhaEntries = caixinha10pct > 0 ? [{ description: 'Caixinha (10%)', amount: caixinha10pct, type: 'variable' as const, category: 'Caixinha' }] : []
+    const mainCaixinhaEntries = caixinha10pct > 0
+      ? [{ description: 'Caixinha (10%)', amount: caixinha10pct, type: 'variable' as const, category: 'Caixinha' }]
+      : []
 
-    const entries = [...dayIncomes, ...dayFixed, ...dayInstallments, ...dayVariable, ...caixinhaEntries]
+    const entries = [...dayIncomes, ...dayFixed, ...dayInstallments, ...dayVariable, ...mainCaixinhaEntries]
     const totalIn = dayIncomes.reduce((s, e) => s + e.amount, 0)
     const totalOut = [...dayFixed, ...dayInstallments, ...dayVariable].reduce((s, e) => s + e.amount, 0) + caixinha10pct
-
     runningBalance = runningBalance + totalIn - totalOut
+
+    // ── Caixinha section: tracked independently from main balance ──
+    const dayCaixinha10pct = dayIncomes.reduce((s, e) => s + e.amount * 0.10, 0)
+    const dayCaixinhaExpenses = targetCaixinhaExpenses
+      .filter(e => toBrazilDateStr(new Date(e.date)) === dayStr)
+      .map(e => ({ description: e.description, amount: Number(e.amount), type: 'caixinha_expense' as const }))
+    const dayCaixinhaOut = dayCaixinhaExpenses.reduce((s, e) => s + e.amount, 0)
+    caixinhaRunning += dayCaixinha10pct - dayCaixinhaOut
+    const caixinhaDayEntries = [
+      ...(dayCaixinha10pct > 0 ? [{ description: 'Depósito (10% da receita)', amount: dayCaixinha10pct, type: 'caixinha_income' as const }] : []),
+      ...dayCaixinhaExpenses,
+    ]
 
     days.push({
       day: d,
@@ -294,8 +331,14 @@ export async function GET(req: Request) {
       totalIn,
       totalOut,
       balance: runningBalance,
+      caixinha: {
+        entries: caixinhaDayEntries,
+        totalIn: dayCaixinha10pct,
+        totalOut: dayCaixinhaOut,
+        balance: caixinhaRunning,
+      },
     })
   }
 
-  return NextResponse.json({ days, currentBalance: monthStartBalance, isFuture, isCurrentMonth })
+  return NextResponse.json({ days, currentBalance: monthStartBalance, isFuture, isCurrentMonth, caixinhaBalance: caixinhaCurrentBalance })
 }
