@@ -84,8 +84,20 @@ export function calculateFinancials(data: FinancialData, referenceDate: Date = n
     .filter(e => e.paid)
     .reduce((sum, e) => sum + e.amount, 0)
 
-  // Saldo real agora = inicial + recebido (histórico todo) - gasto (histórico todo) - fixas pagas - caixinha bruta
-  const realCurrentBalance = data.currentBalance + receivedIncomesTotal - variableExpensesToday - paidFixedTotal - (data.allIncomesTotal ?? 0) * 0.10
+  // Parcelas já vencidas no mês atual (dueDay <= hoje) — não entram em variableExpenses, precisam ser descontadas
+  const todayDay = today.getDate()
+  const currentMonthNum = today.getFullYear() * 12 + today.getMonth()
+  const paidInstallmentsThisMonth = (data.installments ?? [])
+    .filter(i => {
+      if (i.dueDay > todayDay) return false
+      const instStartM = new Date(i.startDate).getFullYear() * 12 + new Date(i.startDate).getMonth()
+      const mFromStart = currentMonthNum - instStartM
+      return mFromStart >= 0 && mFromStart < i.remainingInstallments
+    })
+    .reduce((sum, i) => sum + i.amount, 0)
+
+  // Saldo real agora = inicial + recebido (histórico todo) - gasto (histórico todo) - fixas pagas - parcelas vencidas - caixinha bruta
+  const realCurrentBalance = data.currentBalance + receivedIncomesTotal - variableExpensesToday - paidFixedTotal - paidInstallmentsThisMonth - (data.allIncomesTotal ?? 0) * 0.10
 
   // ── Projeção do fim do mês ────────────────────────────────────────────────────
   // Parte do saldo real AGORA e adiciona apenas o que ainda vai acontecer no mês.
@@ -112,8 +124,6 @@ export function calculateFinancials(data: FinancialData, referenceDate: Date = n
     .reduce((sum, e) => sum + e.amount, 0)
 
   // Parcelas ativas neste mês ainda não vencidas
-  const todayDay = today.getDate()
-  const currentMonthNum = today.getFullYear() * 12 + today.getMonth()
   const unpaidInstallments = (data.installments ?? [])
     .filter(i => {
       if (i.dueDay <= todayDay) return false
