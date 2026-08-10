@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { format, addMonths, subMonths } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { Trash2, TrendingUp, TrendingDown, RefreshCw, Filter, CreditCard, Plus, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Trash2, TrendingUp, TrendingDown, RefreshCw, Filter, CreditCard, Plus, ChevronLeft, ChevronRight, PiggyBank } from 'lucide-react'
 import { formatCurrency } from '@/lib/finance'
 import AddInstallmentModal from './AddInstallmentModal'
 
@@ -94,7 +94,9 @@ export default function TransactionsClient() {
 
   const filteredExpenses: any[] = categoryFilter === 'Todas'
     ? data?.variableExpenses ?? []
-    : (data?.variableExpenses ?? []).filter((e: any) => e.category === categoryFilter)
+    : categoryFilter === 'Caixinha'
+    ? (data?.variableExpenses ?? []).filter((e: any) => e.fromCaixinha === true)
+    : (data?.variableExpenses ?? []).filter((e: any) => e.category === categoryFilter && !e.fromCaixinha)
 
   const monthLabel = format(viewDate, "MMMM 'de' yyyy", { locale: ptBR })
 
@@ -197,6 +199,17 @@ export default function TransactionsClient() {
                         {cat}
                       </button>
                     ))}
+                    <button
+                      onClick={() => setCategoryFilter('Caixinha')}
+                      className={`flex items-center gap-1 text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                        categoryFilter === 'Caixinha'
+                          ? 'bg-yellow-500/20 border-yellow-500/40 text-yellow-400'
+                          : 'border-yellow-800/50 text-yellow-700 hover:text-yellow-500'
+                      }`}
+                    >
+                      <PiggyBank className="w-3 h-3" />
+                      Caixinha
+                    </button>
                   </div>
                 )}
                 {filteredExpenses.length === 0 ? (
@@ -211,6 +224,12 @@ export default function TransactionsClient() {
                             <span className={`text-xs px-1.5 py-0.5 rounded-md ${CATEGORY_COLORS[exp.category] ?? CATEGORY_COLORS['Outros']}`}>
                               {exp.category}
                             </span>
+                            {exp.fromCaixinha && (
+                              <span className="flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-md bg-yellow-500/15 text-yellow-400">
+                                <PiggyBank className="w-2.5 h-2.5" />
+                                Caixinha
+                              </span>
+                            )}
                             <span className="text-xs text-gray-500">
                               {format(new Date(exp.date), "d 'de' MMM 'às' HH:mm", { locale: ptBR })}
                             </span>
