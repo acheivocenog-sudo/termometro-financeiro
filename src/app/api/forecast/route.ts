@@ -110,8 +110,12 @@ export async function GET(req: Request) {
     .filter(e => toBrazilDateStr(new Date(e.date)) <= todayBrazilStr)
     .reduce((s, e) => s + Number(e.amount), 0)
 
-  // Undo current-month transactions from realCurrentBalance to get the prior-month-end balance
-  const currentBalance = realCurrentBalance - currentMonthReceivedSoFar + currentMonthSpentSoFar + paidFixedTotal
+  // Undo current-month transactions from realCurrentBalance to get the prior-month-end balance.
+  // Add back the current month's caixinha contribution (10% of current month incomes) so that
+  // the month-start balance is not reduced by caixinha that hasn't been "collected" yet at month start.
+  // The day loop then re-deducts 10% on each income day for consistency.
+  const currentMonthCaixinha = currentMonthReceivedSoFar * 0.10
+  const currentBalance = realCurrentBalance - currentMonthReceivedSoFar + currentMonthSpentSoFar + paidFixedTotal + currentMonthCaixinha
   const monthStartBalance = currentBalance
 
   const isPastTarget = targetYear < todayYear || (targetYear === todayYear && targetMonth < todayMonth)
@@ -174,7 +178,10 @@ export async function GET(req: Request) {
       })
       .reduce((s, i) => s + Number(i.amount), 0)
 
-    startingBalance = realBalAtTargetEnd - targetMonthNonRecInc - targetMonthRecInc
+    // Day loop now deducts 10% caixinha on every income day, so reverse only 90% of
+    // target month incomes (not 100%) when computing the starting balance from the month-end.
+    const targetMonthTotalInc = targetMonthNonRecInc + targetMonthRecInc
+    startingBalance = realBalAtTargetEnd - targetMonthTotalInc * 0.9
       + targetMonthVar + targetInstallmentTotal
   } else if (isFuture) {
     // Step 1: start from realCurrentBalance (already computed above — full history including all past months)
@@ -299,8 +306,8 @@ export async function GET(req: Request) {
         type: 'variable' as const, category: e.category,
       }))
 
-    // ── Main balance: deduct 10% caixinha from future income days (past already baked into realCurrentBalance) ──
-    const caixinha10pct = isFutureDay ? dayIncomes.reduce((s, e) => s + e.amount * 0.10, 0) : 0
+    // ── Main balance: deduct 10% caixinha from every income day (past and future) ──
+    const caixinha10pct = dayIncomes.reduce((s, e) => s + e.amount * 0.10, 0)
     const mainCaixinhaEntries = caixinha10pct > 0
       ? [{ description: 'Caixinha (10%)', amount: caixinha10pct, type: 'variable' as const, category: 'Caixinha' }]
       : []
