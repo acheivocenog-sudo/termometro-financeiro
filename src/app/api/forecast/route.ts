@@ -154,16 +154,8 @@ export async function GET(req: Request) {
     startingBalance = realBalAtTargetEnd - targetMonthNonRecInc - targetMonthRecInc
       + targetMonthVar + targetInstallmentTotal
   } else if (isFuture) {
-    // Step 1: compute realCurrentBalance = what the user has right now
-    const variableSpentToDate = currentVariableExpenses
-      .filter(e => toBrazilDateStr(new Date(e.date)) <= todayBrazilStr)
-      .reduce((s, e) => s + Number(e.amount), 0)
-    const incomesReceivedToDate = [
-      ...currentMonthIncomes.filter(i => toBrazilDateStr(new Date(i.date)) <= todayBrazilStr),
-      ...recurringIncomes.filter(i => new Date(i.date).getDate() <= todayDay),
-    ].reduce((s, i) => s + Number(i.amount), 0)
-    const paidFixed = fixedExpenses.filter(e => e.paid).reduce((s, e) => s + Number(e.amount), 0)
-    startingBalance = rawBalance + incomesReceivedToDate - variableSpentToDate - paidFixed - caixinhaGross
+    // Step 1: start from realCurrentBalance (already computed above — full history including all past months)
+    startingBalance = realCurrentBalance
 
     // Step 2: apply remaining current month days (tomorrow → end of current month)
     const daysInCurrent = getDaysInMonth(todayLocal)
