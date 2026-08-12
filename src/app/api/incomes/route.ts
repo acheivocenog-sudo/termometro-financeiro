@@ -9,6 +9,7 @@ const schema = z.object({
   amount: z.number().positive(),
   date: z.string(),
   recurring: z.boolean().optional().default(false),
+  excludeFromCaixinha: z.boolean().optional().default(false),
 })
 
 export async function GET() {

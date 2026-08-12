@@ -56,7 +56,7 @@ export async function GET(req: Request) {
     prisma.installment.findMany({ where: { userId, remainingInstallments: { gt: 0 } } }),
     prisma.variableExpense.findMany({ where: { userId, fromCaixinha: false, date: { gte: currentStart, lte: currentEnd } } }),
     isCurrentMonth ? Promise.resolve([]) : prisma.variableExpense.findMany({ where: { userId, fromCaixinha: false, date: { gte: targetStart, lte: targetEnd } } }),
-    prisma.income.aggregate({ where: { userId, OR: [{ recurring: true }, { date: { gte: balanceHistoryStart, lte: new Date(todayYear, todayMonth, todayDay + 1) } }] }, _sum: { amount: true } }),
+    prisma.income.aggregate({ where: { userId, excludeFromCaixinha: false, OR: [{ recurring: true }, { date: { gte: balanceHistoryStart, lte: new Date(todayYear, todayMonth, todayDay + 1) } }] }, _sum: { amount: true } }),
     prisma.variableExpense.findMany({ where: { userId, fromCaixinha: true } }),
     // Historical data from balance month onward — avoids double-counting pre-balance expenses
     prisma.variableExpense.findMany({ where: { userId, fromCaixinha: false, date: { gte: balanceHistoryStart, lte: nowUTC } } }),
@@ -82,7 +82,7 @@ export async function GET(req: Request) {
   const caixinhaAtTargetStart = (() => {
     const tmStart = new Date(targetYear, targetMonth, 1)
     const incBefore = allPastNonRecurringIncomes
-      .filter(i => new Date(i.date) < tmStart)
+      .filter(i => new Date(i.date) < tmStart && !i.excludeFromCaixinha)
       .reduce((s, i) => s + Number(i.amount), 0)
     const spentBefore = allCaixinhaExpenses
       .filter(e => new Date(e.date) < tmStart)
@@ -319,8 +319,8 @@ export async function GET(req: Request) {
         type: 'variable' as const, category: e.category,
       }))
 
-    // ── Main balance: deduct 10% caixinha from every income day (past and future) ──
-    const caixinha10pct = dayIncomes.reduce((s, e) => s + e.amount * 0.10, 0)
+    // ── Main balance: deduct 10% caixinha from income days (excluding flagged ones) ──
+    const caixinha10pct = dayIncomeEntries.reduce((s, i) => i.excludeFromCaixinha ? s : s + Number(i.amount) * 0.10, 0)
     const mainCaixinhaEntries = caixinha10pct > 0
       ? [{ description: 'Caixinha (10%)', amount: caixinha10pct, type: 'variable' as const, category: 'Caixinha' }]
       : []

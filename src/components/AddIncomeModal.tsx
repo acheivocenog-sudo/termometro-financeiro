@@ -16,6 +16,7 @@ export default function AddIncomeModal({ open, onClose, onSaved }: AddIncomeModa
     amount: '',
     date: format(new Date(), 'yyyy-MM-dd'),
     recurring: false,
+    excludeFromCaixinha: false,
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -41,7 +42,7 @@ export default function AddIncomeModal({ open, onClose, onSaved }: AddIncomeModa
       return
     }
 
-    setForm({ description: '', amount: '', date: format(new Date(), 'yyyy-MM-dd'), recurring: false })
+    setForm({ description: '', amount: '', date: format(new Date(), 'yyyy-MM-dd'), recurring: false, excludeFromCaixinha: false })
     onSaved()
     onClose()
   }
@@ -104,6 +105,19 @@ export default function AddIncomeModal({ open, onClose, onSaved }: AddIncomeModa
               className="w-4 h-4 accent-emerald-500"
             />
             <label htmlFor="recurring" className="text-sm text-gray-400">Recorrente (repete todo mês)</label>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="excludeFromCaixinha"
+              checked={form.excludeFromCaixinha}
+              onChange={e => setForm(f => ({ ...f, excludeFromCaixinha: e.target.checked }))}
+              className="w-4 h-4 accent-yellow-500"
+            />
+            <label htmlFor="excludeFromCaixinha" className="text-sm text-gray-400">
+              Não deduzir 10% da caixinha
+            </label>
           </div>
 
           {error && <p className="text-red-400 text-sm">{error}</p>}

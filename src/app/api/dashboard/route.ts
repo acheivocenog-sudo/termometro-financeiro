@@ -150,7 +150,7 @@ export async function GET() {
       where: { userId, recurring: false, date: { gte: balanceHistoryStart, lte: nowUTC } },
       orderBy: { date: 'asc' },
     }),
-    prisma.income.aggregate({ where: { userId, OR: [{ recurring: true }, { date: { gte: balanceHistoryStart, lte: nowUTC } }] }, _sum: { amount: true } }),
+    prisma.income.aggregate({ where: { userId, excludeFromCaixinha: false, OR: [{ recurring: true }, { date: { gte: balanceHistoryStart, lte: nowUTC } }] }, _sum: { amount: true } }),
     prisma.variableExpense.aggregate({ where: { userId, fromCaixinha: true }, _sum: { amount: true } }),
     prisma.installment.findMany({ where: { userId, remainingInstallments: { gt: 0 } } }),
     // Future one-time incomes (not recurring, date > now) — needed for runway projection
