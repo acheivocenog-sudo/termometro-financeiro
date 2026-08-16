@@ -282,8 +282,7 @@ export async function GET(req: Request) {
     const dayFixed = fixedExpenses
       .filter(e => {
         if (e.dueDay !== d) return false
-        if (isFutureDay) return !e.paid  // future: only unpaid
-        return true                       // past/today: show regardless (paid or not)
+        return true  // always include: paid ones still left the account
       })
       .map(e => ({
         description: e.description, amount: Number(e.amount),
