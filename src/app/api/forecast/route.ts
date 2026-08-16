@@ -315,14 +315,14 @@ export async function GET(req: Request) {
         type: 'variable' as const, category: e.category,
       }))
 
+    // ── Caixinha section: tracked independently from main balance ──
+    const dayCaixinha10pct = dayIncomeEntries.reduce((s, i) => i.excludeFromCaixinha ? s : s + Number(i.amount) * 0.10, 0)
+
     const entries = [...dayIncomes, ...dayFixed, ...dayInstallments, ...dayVariable]
     const totalIn = dayIncomes.reduce((s, e) => s + e.amount, 0)
     const totalOut = [...dayFixed, ...dayInstallments, ...dayVariable].reduce((s, e) => s + e.amount, 0)
-    // 10% de cada receita qualificada vai para a caixinha — já calculado em dayCaixinha10pct
+    // 10% de cada receita qualificada vai para a caixinha — só 90% entra no saldo principal
     runningBalance = runningBalance + totalIn - dayCaixinha10pct - totalOut
-
-    // ── Caixinha section: tracked independently from main balance ──
-    const dayCaixinha10pct = dayIncomeEntries.reduce((s, i) => i.excludeFromCaixinha ? s : s + Number(i.amount) * 0.10, 0)
     const dayCaixinhaExpenses = targetCaixinhaExpenses
       .filter(e => toBrazilDateStr(new Date(e.date)) === dayStr)
       .map(e => ({ description: e.description, amount: Number(e.amount), type: 'caixinha_expense' as const }))
