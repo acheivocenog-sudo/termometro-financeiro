@@ -331,7 +331,7 @@ export async function GET(req: Request) {
     runningBalance = runningBalance + totalIn - totalOut
 
     // ── Caixinha section: tracked independently from main balance ──
-    const dayCaixinha10pct = dayIncomes.reduce((s, e) => s + e.amount * 0.10, 0)
+    const dayCaixinha10pct = dayIncomeEntries.reduce((s, i) => i.excludeFromCaixinha ? s : s + Number(i.amount) * 0.10, 0)
     const dayCaixinhaExpenses = targetCaixinhaExpenses
       .filter(e => toBrazilDateStr(new Date(e.date)) === dayStr)
       .map(e => ({ description: e.description, amount: Number(e.amount), type: 'caixinha_expense' as const }))
