@@ -97,8 +97,8 @@ export async function GET(req: Request) {
   ].reduce((s, i) => s + Number(i.amount), 0)
   const allVariableSpentToDate = allPastVariableExpenses.reduce((s, e) => s + Number(e.amount), 0)
   const paidFixedTotal = fixedExpenses.filter(e => e.paid).reduce((s, e) => s + Number(e.amount), 0)
-  // Caixinha é calculada de forma isolada — não impacta o saldo principal
-  const realCurrentBalance = rawBalance + allReceivedToDate - allVariableSpentToDate - paidFixedTotal
+  // 10% de cada receita qualificada vai para a caixinha — apenas 90% entra no saldo principal
+  const realCurrentBalance = rawBalance + allReceivedToDate - allVariableSpentToDate - paidFixedTotal - caixinhaGross
 
   // startOfMonthBalance = balance at the END of the day before month started (day 0).
   // = realCurrentBalance minus what has already happened this month,
@@ -112,10 +112,13 @@ export async function GET(req: Request) {
     .reduce((s, e) => s + Number(e.amount), 0)
 
   // Undo current-month transactions from realCurrentBalance to get the prior-month-end balance.
-  // Add back the current month's caixinha contribution (10% of current month incomes) so that
-  // the month-start balance is not reduced by caixinha that hasn't been "collected" yet at month start.
-  // The day loop then re-deducts 10% on each income day for consistency.
-  const currentBalance = realCurrentBalance - currentMonthReceivedSoFar + currentMonthSpentSoFar + paidFixedTotal
+  // Add back the 10% caixinha already deducted from current-month incomes, so that the month-start
+  // balance is correct. The day loop re-deducts it on each income day.
+  const currentMonthCaixinha10pct = [
+    ...currentMonthIncomes.filter(i => toBrazilDateStr(new Date(i.date)) <= todayBrazilStr && !i.excludeFromCaixinha),
+    ...recurringIncomes.filter(i => new Date(i.date).getDate() <= todayDay && !i.excludeFromCaixinha),
+  ].reduce((s, i) => s + Number(i.amount) * 0.10, 0)
+  const currentBalance = realCurrentBalance - currentMonthReceivedSoFar + currentMonthSpentSoFar + paidFixedTotal + currentMonthCaixinha10pct
   const monthStartBalance = currentBalance
 
   const isPastTarget = targetYear < todayYear || (targetYear === todayYear && targetMonth < todayMonth)
@@ -152,9 +155,9 @@ export async function GET(req: Request) {
     // Caixinha: only on incomes through target month (not inflated by future months)
     const caixinhaAtTargetEnd = (incThroughTarget + recurringThroughTarget) * 0.10
 
-    // Real balance at end of target month (caixinha not included in main balance)
+    // Real balance at end of target month: 10% of incomes goes to caixinha, not to principal
     const realBalAtTargetEnd = rawBalance + incThroughTarget + recurringThroughTarget
-      - varThroughTarget - paidFixedTotal
+      - varThroughTarget - paidFixedTotal - caixinhaAtTargetEnd
 
     // Reverse the target month's own transactions to get the starting balance
     const targetMonthStart = new Date(targetYear, targetMonth, 1)
@@ -198,7 +201,7 @@ export async function GET(req: Request) {
       const dayIn = [
         ...recurringIncomes.filter(i => new Date(i.date).getDate() === d),
         ...currentMonthIncomes.filter(i => toBrazilDateStr(new Date(i.date)) === dStr),
-      ].reduce((s, i) => s + Number(i.amount), 0)
+      ].reduce((s, i) => s + Number(i.amount) * (i.excludeFromCaixinha ? 1.0 : 0.9), 0)
       const dayOut = [
         ...fixedExpenses.filter(e => e.dueDay === d && !e.paid),
         ...installments.filter(i => {
@@ -216,7 +219,7 @@ export async function GET(req: Request) {
 
     // Step 3: simulate each intermediate full month between current and target
     for (let m = 1; m < monthsElapsedToTarget; m++) {
-      const monthlyIn = recurringIncomes.reduce((s, i) => s + Number(i.amount), 0)
+      const monthlyIn = recurringIncomes.reduce((s, i) => s + Number(i.amount) * (i.excludeFromCaixinha ? 1.0 : 0.9), 0)
       const monthlyOut = fixedExpenses.reduce((s, e) => s + Number(e.amount), 0)
         + installments.filter(i => {
             const instStart = new Date(i.startDate)
@@ -315,7 +318,8 @@ export async function GET(req: Request) {
     const entries = [...dayIncomes, ...dayFixed, ...dayInstallments, ...dayVariable]
     const totalIn = dayIncomes.reduce((s, e) => s + e.amount, 0)
     const totalOut = [...dayFixed, ...dayInstallments, ...dayVariable].reduce((s, e) => s + e.amount, 0)
-    runningBalance = runningBalance + totalIn - totalOut
+    // 10% de cada receita qualificada vai para a caixinha — já calculado em dayCaixinha10pct
+    runningBalance = runningBalance + totalIn - dayCaixinha10pct - totalOut
 
     // ── Caixinha section: tracked independently from main balance ──
     const dayCaixinha10pct = dayIncomeEntries.reduce((s, i) => i.excludeFromCaixinha ? s : s + Number(i.amount) * 0.10, 0)
