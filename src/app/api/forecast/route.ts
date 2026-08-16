@@ -185,16 +185,9 @@ export async function GET(req: Request) {
     // Step 1: start from realCurrentBalance (already computed above — full history including all past months)
     startingBalance = realCurrentBalance
 
-    // Deduct current-month installments already paid (dueDay ≤ today).
-    // realCurrentBalance doesn't include installments; the current-month day loop handles them for
-    // isCurrentMonth view, but for isFuture we only simulate todayDay+1 onward, missing past-due installments.
+    // Deduct current-month installments explicitly marked as paid by the user.
     const paidInstallmentsCurrentMonth = installments
-      .filter(i => {
-        if (i.dueDay > todayDay) return false
-        const instStartM = new Date(i.startDate).getFullYear() * 12 + new Date(i.startDate).getMonth()
-        const mFromStart = (todayYear * 12 + todayMonth) - instStartM
-        return mFromStart >= 0 && mFromStart < i.remainingInstallments
-      })
+      .filter(i => i.paid)
       .reduce((s, i) => s + Number(i.amount), 0)
     startingBalance -= paidInstallmentsCurrentMonth
 
@@ -295,7 +288,10 @@ export async function GET(req: Request) {
         const instStartMonthNum = instStart.getFullYear() * 12 + instStart.getMonth()
         const targetMonthNum = targetYear * 12 + targetMonth
         const monthsFromStart = targetMonthNum - instStartMonthNum
-        return monthsFromStart >= 0 && monthsFromStart < i.remainingInstallments
+        if (monthsFromStart < 0 || monthsFromStart >= i.remainingInstallments) return false
+        // For past/today days in the current month: only include if marked as paid
+        if (isCurrentMonth && !isFutureDay && !i.paid) return false
+        return true
       })
       .map(i => {
         const instStart = new Date(i.startDate)

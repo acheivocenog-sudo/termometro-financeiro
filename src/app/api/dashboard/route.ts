@@ -174,7 +174,7 @@ export async function GET() {
     futureFixedExpenses: fixedExpenses.map(e => ({ ...e, amount: Number(e.amount) })),
     todayVariableExpenses: currentMonthVariableExpenses.map(e => ({ ...e, amount: Number(e.amount) })),
     allVariableExpenses: allPastVariableExpenses.map(e => ({ ...e, amount: Number(e.amount) })),
-    installments: installments.map(i => ({ amount: Number(i.amount), dueDay: i.dueDay, remainingInstallments: i.remainingInstallments, startDate: i.startDate })),
+    installments: installments.map(i => ({ amount: Number(i.amount), dueDay: i.dueDay, remainingInstallments: i.remainingInstallments, startDate: i.startDate, paid: i.paid })),
     allIncomesTotal,
     caixinhaSpent,
   }

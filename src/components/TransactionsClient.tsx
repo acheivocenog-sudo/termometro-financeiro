@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { format, addMonths, subMonths } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { Trash2, TrendingUp, TrendingDown, RefreshCw, Filter, CreditCard, Plus, ChevronLeft, ChevronRight, PiggyBank } from 'lucide-react'
+import { Trash2, TrendingUp, TrendingDown, RefreshCw, Filter, CreditCard, Plus, ChevronLeft, ChevronRight, PiggyBank, Check } from 'lucide-react'
 import { formatCurrency } from '@/lib/finance'
 import AddInstallmentModal from './AddInstallmentModal'
 
@@ -71,6 +71,19 @@ export default function TransactionsClient() {
 
   async function deleteInstallment(id: string) {
     await fetch(`/api/installments/${id}`, { method: 'DELETE' })
+    fetchData()
+  }
+
+  async function toggleInstallmentPaid(inst: any) {
+    const newPaid = !inst.paid
+    const newRemaining = newPaid
+      ? Math.max(0, inst.remainingInstallments - 1)
+      : inst.remainingInstallments + 1
+    await fetch(`/api/installments/${inst.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paid: newPaid, remainingInstallments: newRemaining, paidAt: newPaid ? new Date().toISOString() : null }),
+    })
     fetchData()
   }
 
@@ -338,14 +351,30 @@ export default function TransactionsClient() {
                   <div className="divide-y divide-gray-800">
                     {installments.map((inst: any) => (
                       <div key={inst.id} className="flex items-center gap-3 py-3 group">
+                        <button
+                          onClick={() => toggleInstallmentPaid(inst)}
+                          title={inst.paid ? 'Marcar como não pago' : 'Marcar como pago'}
+                          className={`flex-shrink-0 w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all ${
+                            inst.paid
+                              ? 'border-emerald-500 bg-emerald-500/20 text-emerald-400'
+                              : 'border-gray-700 text-gray-600 hover:border-purple-500 hover:text-purple-400'
+                          }`}
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                        </button>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-white truncate">{inst.description}</p>
+                          <p className={`text-sm font-medium truncate ${inst.paid ? 'line-through text-gray-500' : 'text-white'}`}>
+                            {inst.description}
+                          </p>
                           <p className="text-xs text-gray-500 mt-0.5">
-                            Vence dia {inst.dueDay} · {inst.remainingInstallments}/{inst.totalInstallments} parcelas restantes
+                            Vence dia {inst.dueDay} · {inst.remainingInstallments}/{inst.totalInstallments} restantes
+                            {inst.paid && <span className="ml-2 text-emerald-500">Pago este mês</span>}
                           </p>
                         </div>
                         <div className="text-right">
-                          <span className="text-sm font-bold text-purple-400">{formatCurrency(Number(inst.amount))}</span>
+                          <span className={`text-sm font-bold ${inst.paid ? 'text-gray-600' : 'text-purple-400'}`}>
+                            {formatCurrency(Number(inst.amount))}
+                          </span>
                           <p className="text-xs text-gray-500">por parcela</p>
                         </div>
                         <button
