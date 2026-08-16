@@ -97,7 +97,8 @@ export async function GET(req: Request) {
   ].reduce((s, i) => s + Number(i.amount), 0)
   const allVariableSpentToDate = allPastVariableExpenses.reduce((s, e) => s + Number(e.amount), 0)
   const paidFixedTotal = fixedExpenses.filter(e => e.paid).reduce((s, e) => s + Number(e.amount), 0)
-  const realCurrentBalance = rawBalance + allReceivedToDate - allVariableSpentToDate - paidFixedTotal - caixinhaGross
+  // Caixinha é calculada de forma isolada — não impacta o saldo principal
+  const realCurrentBalance = rawBalance + allReceivedToDate - allVariableSpentToDate - paidFixedTotal
 
   // startOfMonthBalance = balance at the END of the day before month started (day 0).
   // = realCurrentBalance minus what has already happened this month,
@@ -114,8 +115,7 @@ export async function GET(req: Request) {
   // Add back the current month's caixinha contribution (10% of current month incomes) so that
   // the month-start balance is not reduced by caixinha that hasn't been "collected" yet at month start.
   // The day loop then re-deducts 10% on each income day for consistency.
-  const currentMonthCaixinha = currentMonthReceivedSoFar * 0.10
-  const currentBalance = realCurrentBalance - currentMonthReceivedSoFar + currentMonthSpentSoFar + paidFixedTotal + currentMonthCaixinha
+  const currentBalance = realCurrentBalance - currentMonthReceivedSoFar + currentMonthSpentSoFar + paidFixedTotal
   const monthStartBalance = currentBalance
 
   const isPastTarget = targetYear < todayYear || (targetYear === todayYear && targetMonth < todayMonth)
@@ -152,9 +152,9 @@ export async function GET(req: Request) {
     // Caixinha: only on incomes through target month (not inflated by future months)
     const caixinhaAtTargetEnd = (incThroughTarget + recurringThroughTarget) * 0.10
 
-    // Real balance at end of target month
+    // Real balance at end of target month (caixinha not included in main balance)
     const realBalAtTargetEnd = rawBalance + incThroughTarget + recurringThroughTarget
-      - varThroughTarget - paidFixedTotal - caixinhaAtTargetEnd
+      - varThroughTarget - paidFixedTotal
 
     // Reverse the target month's own transactions to get the starting balance
     const targetMonthStart = new Date(targetYear, targetMonth, 1)
@@ -178,10 +178,8 @@ export async function GET(req: Request) {
       })
       .reduce((s, i) => s + Number(i.amount), 0)
 
-    // Day loop now deducts 10% caixinha on every income day, so reverse only 90% of
-    // target month incomes (not 100%) when computing the starting balance from the month-end.
     const targetMonthTotalInc = targetMonthNonRecInc + targetMonthRecInc
-    startingBalance = realBalAtTargetEnd - targetMonthTotalInc * 0.9
+    startingBalance = realBalAtTargetEnd - targetMonthTotalInc
       + targetMonthVar + targetInstallmentTotal
   } else if (isFuture) {
     // Step 1: start from realCurrentBalance (already computed above — full history including all past months)
@@ -318,15 +316,9 @@ export async function GET(req: Request) {
         type: 'variable' as const, category: e.category,
       }))
 
-    // ── Main balance: deduct 10% caixinha from income days (excluding flagged ones) ──
-    const caixinha10pct = dayIncomeEntries.reduce((s, i) => i.excludeFromCaixinha ? s : s + Number(i.amount) * 0.10, 0)
-    const mainCaixinhaEntries = caixinha10pct > 0
-      ? [{ description: 'Caixinha (10%)', amount: caixinha10pct, type: 'variable' as const, category: 'Caixinha' }]
-      : []
-
-    const entries = [...dayIncomes, ...dayFixed, ...dayInstallments, ...dayVariable, ...mainCaixinhaEntries]
+    const entries = [...dayIncomes, ...dayFixed, ...dayInstallments, ...dayVariable]
     const totalIn = dayIncomes.reduce((s, e) => s + e.amount, 0)
-    const totalOut = [...dayFixed, ...dayInstallments, ...dayVariable].reduce((s, e) => s + e.amount, 0) + caixinha10pct
+    const totalOut = [...dayFixed, ...dayInstallments, ...dayVariable].reduce((s, e) => s + e.amount, 0)
     runningBalance = runningBalance + totalIn - totalOut
 
     // ── Caixinha section: tracked independently from main balance ──

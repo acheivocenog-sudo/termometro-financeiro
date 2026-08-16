@@ -96,8 +96,9 @@ export function calculateFinancials(data: FinancialData, referenceDate: Date = n
     })
     .reduce((sum, i) => sum + i.amount, 0)
 
-  // Saldo real agora = inicial + recebido (histórico todo) - gasto (histórico todo) - fixas pagas - parcelas vencidas - caixinha bruta
-  const realCurrentBalance = data.currentBalance + receivedIncomesTotal - variableExpensesToday - paidFixedTotal - paidInstallmentsThisMonth - (data.allIncomesTotal ?? 0) * 0.10
+  // Saldo real agora = inicial + recebido (histórico todo) - gasto (histórico todo) - fixas pagas - parcelas vencidas
+  // Caixinha é calculada de forma isolada e não impacta o saldo principal
+  const realCurrentBalance = data.currentBalance + receivedIncomesTotal - variableExpensesToday - paidFixedTotal - paidInstallmentsThisMonth
 
   // ── Projeção do fim do mês ────────────────────────────────────────────────────
   // Parte do saldo real AGORA e adiciona apenas o que ainda vai acontecer no mês.
@@ -133,8 +134,8 @@ export function calculateFinancials(data: FinancialData, referenceDate: Date = n
     })
     .reduce((sum, i) => sum + i.amount, 0)
 
-  // Saldo projetado = saldo real agora + receitas futuras - fixas a pagar - parcelas a vencer - var futuras - caixinha das futuras
-  const projectedBalance = realCurrentBalance + futureMonthIncomes - unpaidFixed - unpaidInstallments - futureMonthVariables - futureMonthIncomes * 0.10
+  // Saldo projetado = saldo real agora + receitas futuras - fixas a pagar - parcelas a vencer - var futuras
+  const projectedBalance = realCurrentBalance + futureMonthIncomes - unpaidFixed - unpaidInstallments - futureMonthVariables
 
   // availableBalance mantido para compatibilidade: saldo projetado + gastos var já feitos
   const availableBalance = projectedBalance + variableExpensesTotalThisMonth
